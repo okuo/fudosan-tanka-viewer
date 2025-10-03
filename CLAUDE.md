@@ -6,6 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 SUUMO向けChrome拡張機能。物件の価格と専有面積から坪単価・平米単価を自動計算して表示する。
 
+**対応ページ:**
+- 一覧ページ（例: https://suumo.jp/jj/bukken/ichiran/...）
+- 詳細ページ（例: https://suumo.jp/ms/chuko/tokyo/sc_...）
+
+**主な機能:**
+- 億円表記の価格を正しく計算（例: 2億5990万円 = 25990万円）
+- 同じ価格・面積の組み合わせはキャッシュして効率化
+- テーブル内はコンパクト表示でレイアウト崩れを防止
+- 無限スクロール対応（MutationObserver）
+
 ## プロジェクト構造
 
 ```
@@ -28,16 +38,25 @@ fudosan-tanka-viewer/
 
 ### デバッグ方法
 
-1. SUUMOの物件ページを開く
+1. SUUMOの物件ページを開く（例：https://suumo.jp/ms/chuko/tokyo/）
 2. Chrome DevToolsを開く（F12）
-3. Consoleタブでログを確認
+3. Consoleタブで `[SUUMO坪単価]` プレフィックスのログを確認
 4. Elementsタブで `.suumo-unit-price` クラスの要素を確認
+
+**デバッグログの見方:**
+- `拡張機能が起動しました` - content.jsが正常に読み込まれた
+- `物件カード数: X` - 見つかった物件要素の数
+- `価格要素発見` / `面積要素発見` - 各要素の検出状況
+- `価格テキスト` / `面積テキスト` - 抽出されたテキスト
+- `計算結果` - 坪単価・平米単価の計算値
+- `単価表示を挿入しました` - DOM挿入成功
 
 ### コード変更時
 
 1. ファイルを編集
 2. `chrome://extensions/` で拡張機能の「更新」ボタンをクリック
 3. SUUMOページをリロード（Ctrl+R）
+4. Consoleでログを確認
 
 ## アーキテクチャ
 
@@ -47,15 +66,20 @@ fudosan-tanka-viewer/
    - ページ読み込み時に全物件を処理
    - MutationObserverでDOM変更を監視開始
 
-2. **物件処理** (`processProperty()`)
-   - 価格要素を検索（複数のCSSセレクタパターン）
-   - 面積要素を検索
+2. **一覧ページ処理** (`processProperty()`)
+   - 物件カード（`.dottable--cassette` など）から価格・面積を検索
    - 価格・面積を数値抽出
-   - 坪単価・平米単価を計算
+   - キャッシュをチェック、なければ計算
    - DOM要素を作成・挿入
 
-3. **DOM監視** (`observeDOMChanges()`)
+3. **詳細ページ処理** (`processAllProperties()`)
+   - 物件概要テーブルから価格・面積を取得（確実な方法）
+   - 1回だけ計算してキャッシュ
+   - ページ上部とテーブル内の複数箇所に表示
+
+4. **DOM監視** (`observeDOMChanges()`)
    - 無限スクロールで新規追加される物件を検知
+   - 自分が追加した`.suumo-unit-price`要素は無視（無限ループ防止）
    - 新しいノードが追加されたら自動処理
 
 ### 計算式
@@ -68,16 +92,23 @@ fudosan-tanka-viewer/
 
 SUUMOのHTML構造変更に対応するため、複数のセレクタパターンを定義：
 
-**価格要素:**
-- `.dkr-cassetteitem_price--num` （一覧ページ）
-- `.cassette_price--num` （旧パターン）
-- `.property_view_note-emphasis` （詳細ページ）
-- `[class*="price"]` （汎用フォールバック）
+**一覧ページ - 物件カード:**
+- `.dottable--cassette` （新一覧ページ）
+- `.cassetteitem` （旧一覧ページ）
 
-**面積要素:**
-- `.dkr-cassetteitem_detail_text--area` （一覧ページ）
-- `.cassette_detail_text--area` （旧パターン）
-- `[class*="area"]` （汎用フォールバック）
+**一覧ページ - 価格要素:**
+- `.dottable-value` （新一覧ページ）
+- `.dkr-cassetteitem_price--num` （旧一覧ページ）
+- `.cassette_price--num` （さらに旧パターン）
+
+**一覧ページ - 面積要素:**
+- `<dt>専有面積</dt>` の次の `<dd>` 要素
+- `.dkr-cassetteitem_detail_text--area` （旧パターン）
+
+**詳細ページ:**
+- 物件概要テーブルの `<th>価格</th>` / `<th>専有面積</th>` 行から取得
+- ページ上部: `.mt7.b` （価格表示の下に坪単価を挿入）
+- テーブル内: コンパクトスタイル（`.suumo-unit-price--compact`）で表示
 
 ## SUUMOのHTML構造が変わった場合
 
@@ -101,11 +132,41 @@ const priceSelectors = [
 
 ### 坪単価が表示されない場合
 
-1. DevToolsのConsoleでエラーを確認
-2. Elementsタブで価格・面積要素のクラス名を確認
-3. セレクタパターンを追加・更新
+**ステップ1: ログ確認**
+- Consoleで `[SUUMO坪単価]` ログを確認
+- `物件カード数: 0` の場合 → 物件要素のセレクタが間違っている
+- `価格要素が見つかりませんでした` の場合 → 価格セレクタを更新
+
+**ステップ2: HTML構造調査**
+1. DevTools Elementsタブで物件要素を検査
+2. 価格が表示されている要素のクラス名をコピー
+3. 面積が表示されている要素のクラス名をコピー
+4. `content.js` の `priceSelectors` / `areaSelectors` に追加
+
+**ステップ3: セレクタ更新**
+```javascript
+const priceSelectors = [
+  '.新しく見つけたクラス名',  // 最優先で追加
+  '.dkr-cassetteitem_price--num',
+  // ...
+];
+```
 
 ### 計算不可と表示される場合
 
-- 価格または面積が正しく抽出できていない
-- `extractNumber()` 関数のデバッグが必要
+- Consoleで抽出された価格・面積の値を確認
+- 価格または面積が正しく抽出できていない場合、`extractNumber()` 関数を修正
+- SUUMOのテキスト形式が変わった可能性あり（例: 「3,000万円」→「3000万円」）
+
+### 詳細ページで表示されない場合
+
+- `propertyCards.length === 0` で詳細ページと判定
+- 物件概要テーブルから価格・面積を取得しているか確認
+- Consoleで `[SUUMO坪単価] 詳細ページとして処理` が出ているか確認
+- `[SUUMO坪単価] 物件概要から取得` で価格・面積が正しく取得できているか確認
+
+### ページ読み込みが終わらない場合
+
+- MutationObserverの無限ループの可能性
+- `.suumo-unit-price` 要素の追加を検知して再処理していないか確認
+- `observeDOMChanges()` で自分が追加した要素を無視しているか確認

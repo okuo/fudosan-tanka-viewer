@@ -5,20 +5,43 @@
 
 .suumo-unit-price {
   margin-top: 8px;
-  padding: 10px 14px;
+  padding: 8px 12px;
   background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
   border-radius: 6px;
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 600;
   color: #ffffff;
   display: inline-block;
   box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
+  white-space: nowrap;
 }
 
 .suumo-unit-price:hover {
   transform: translateY(-2px);
   box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+/* テーブル内ではコンパクトに表示 */
+.suumo-unit-price--compact {
+  margin-top: 4px;
+  padding: 4px 8px;
+  font-size: 11px;
+  display: block;
+  max-width: fit-content;
+}
+
+.suumo-unit-price--compact .unit-price-label {
+  font-size: 10px;
+}
+
+.suumo-unit-price--compact .unit-price-value {
+  font-size: 12px;
+  margin-right: 6px;
+}
+
+.suumo-unit-price--compact .unit-price-separator {
+  margin: 0 4px;
 }
 
 .unit-price-label {
