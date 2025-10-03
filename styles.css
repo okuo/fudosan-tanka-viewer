@@ -1,0 +1,81 @@
+/**
+ * SUUMO 坪単価・平米単価表示スタイル
+ * 目立つデザインで価格の下に表示
+ */
+
+.suumo-unit-price {
+  margin-top: 8px;
+  padding: 10px 14px;
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  border-radius: 6px;
+  font-size: 14px;
+  font-weight: 600;
+  color: #ffffff;
+  display: inline-block;
+  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
+  transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.suumo-unit-price:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+}
+
+.unit-price-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.85);
+  margin-right: 4px;
+}
+
+.unit-price-value {
+  font-size: 15px;
+  font-weight: 700;
+  color: #ffffff;
+  margin-right: 10px;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.unit-price-separator {
+  color: rgba(255, 255, 255, 0.5);
+  margin: 0 8px;
+  font-weight: 300;
+}
+
+.unit-price-na {
+  font-size: 13px;
+  font-weight: 500;
+  color: rgba(255, 255, 255, 0.7);
+  margin-right: 10px;
+  font-style: italic;
+}
+
+/* レスポンシブ対応 */
+@media (max-width: 768px) {
+  .suumo-unit-price {
+    font-size: 13px;
+    padding: 8px 12px;
+  }
+
+  .unit-price-value {
+    font-size: 14px;
+  }
+
+  .unit-price-label {
+    font-size: 11px;
+  }
+
+  .unit-price-separator {
+    margin: 0 6px;
+  }
+}
+
+/* 印刷時の最適化 */
+@media print {
+  .suumo-unit-price {
+    background: #667eea;
+    box-shadow: none;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+}

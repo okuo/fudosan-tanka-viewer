@@ -1,0 +1,25 @@
+{
+  "manifest_version": 3,
+  "name": "SUUMO 坪単価・平米単価表示",
+  "version": "1.0.0",
+  "description": "SUUMOの物件ページに坪単価と平米単価を自動表示します",
+  "permissions": [],
+  "host_permissions": [
+    "*://*.suumo.jp/*"
+  ],
+  "content_scripts": [
+    {
+      "matches": [
+        "*://*.suumo.jp/*"
+      ],
+      "js": ["content.js"],
+      "css": ["styles.css"],
+      "run_at": "document_end"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}
