@@ -4,17 +4,26 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## プロジェクト概要
 
-SUUMO向けChrome拡張機能。物件の価格と専有面積から坪単価・平米単価を自動計算して表示する。
+不動産サイト向けChrome拡張機能。物件の価格と専有面積から坪単価・平米単価を自動計算して表示する。
+
+**対応サイト:**
+- SUUMO（スーモ）
+- 三井のリハウス
 
 **対応ページ:**
-- 一覧ページ（例: https://suumo.jp/jj/bukken/ichiran/...）
-- 詳細ページ（例: https://suumo.jp/ms/chuko/tokyo/sc_...）
+- SUUMO
+  - 一覧ページ（例: https://suumo.jp/jj/bukken/ichiran/...）
+  - 詳細ページ（例: https://suumo.jp/ms/chuko/tokyo/sc_...）
+- 三井のリハウス
+  - 一覧ページ（例: https://www.rehouse.co.jp/buy/mansion/prefecture/13/city/13102/）
+  - 詳細ページ（例: https://www.rehouse.co.jp/buy/mansion/bkdetail/F1FAGA2C/）
 
 **主な機能:**
 - 億円表記の価格を正しく計算（例: 2億5990万円 = 25990万円）
 - 同じ価格・面積の組み合わせはキャッシュして効率化
-- テーブル内はコンパクト表示でレイアウト崩れを防止
+- テーブル内はコンパクト表示でレイアウト崩れを防止（SUUMO）
 - 無限スクロール対応（MutationObserver）
+- サイトを自動判定して適切なセレクタを使用
 
 ## プロジェクト構造
 
@@ -38,9 +47,11 @@ fudosan-tanka-viewer/
 
 ### デバッグ方法
 
-1. SUUMOの物件ページを開く（例：https://suumo.jp/ms/chuko/tokyo/）
+1. 対象サイトの物件ページを開く
+   - SUUMO（例：https://suumo.jp/ms/chuko/tokyo/）
+   - 三井のリハウス（例：https://www.rehouse.co.jp/buy/mansion/prefecture/13/city/13102/）
 2. Chrome DevToolsを開く（F12）
-3. Consoleタブで `[SUUMO坪単価]` プレフィックスのログを確認
+3. Consoleタブで `[SUUMO坪単価]` または `[REHOUSE坪単価]` プレフィックスのログを確認
 4. Elementsタブで `.suumo-unit-price` クラスの要素を確認
 
 **デバッグログの見方:**
@@ -55,7 +66,7 @@ fudosan-tanka-viewer/
 
 1. ファイルを編集
 2. `chrome://extensions/` で拡張機能の「更新」ボタンをクリック
-3. SUUMOページをリロード（Ctrl+R）
+3. 対象サイトのページをリロード（Ctrl+R）
 4. Consoleでログを確認
 
 ## アーキテクチャ
@@ -90,7 +101,9 @@ fudosan-tanka-viewer/
 
 ### CSSセレクタパターン
 
-SUUMOのHTML構造変更に対応するため、複数のセレクタパターンを定義：
+各サイトのHTML構造変更に対応するため、複数のセレクタパターンを定義：
+
+#### SUUMO
 
 **一覧ページ - 物件カード:**
 - `.dottable--cassette` （新一覧ページ）
@@ -110,7 +123,32 @@ SUUMOのHTML構造変更に対応するため、複数のセレクタパター�
 - ページ上部: `.mt7.b` （価格表示の下に坪単価を挿入）
 - テーブル内: コンパクトスタイル（`.suumo-unit-price--compact`）で表示
 
-## SUUMOのHTML構造が変わった場合
+#### 三井のリハウス
+
+**一覧ページ - 物件カード:**
+- `.property-index-card` （物件カードコンテナ）
+
+**一覧ページ - 価格要素:**
+- `.price-text` （価格表示要素）
+
+**一覧ページ - 面積要素:**
+- `.paragraph-body`（㎡を含むもの）
+  - 注意: 複数の`.paragraph-body`があるため、`textContent.includes('㎡')`で絞り込み
+  - 住所情報と区別するため
+
+**詳細ページ - 価格要素:**
+- `.text-price-regular.price-size` （メインの価格表示）
+- `.building-price-info` （フォールバック）
+
+**詳細ページ - 面積要素:**
+- `.building-info` （間取り・面積情報、例: `3LDK/135.24㎡(約40.91坪)`）
+
+**詳細ページ - 表示位置:**
+- 価格要素の直下に坪単価・平米単価を挿入
+
+## HTML構造が変わった場合
+
+### SUUMOのセレクタ更新
 
 `content.js` の `priceSelectors` と `areaSelectors` 配列を更新：
 
@@ -120,6 +158,20 @@ const priceSelectors = [
   '.dkr-cassetteitem_price--num',
   // ...既存のセレクタ
 ];
+```
+
+### 三井のリハウスのセレクタ更新
+
+同様に、`SITE_TYPE === 'REHOUSE'` の分岐内でセレクタを更新：
+
+```javascript
+if (SITE_TYPE === 'REHOUSE') {
+  priceSelectors = [
+    '.新しいクラス名',  // 追加
+    '.price-text',
+    // ...既存のセレクタ
+  ];
+}
 ```
 
 ## 今後の展開
@@ -133,7 +185,7 @@ const priceSelectors = [
 ### 坪単価が表示されない場合
 
 **ステップ1: ログ確認**
-- Consoleで `[SUUMO坪単価]` ログを確認
+- Consoleで `[SUUMO坪単価]` または `[REHOUSE坪単価]` ログを確認
 - `物件カード数: 0` の場合 → 物件要素のセレクタが間違っている
 - `価格要素が見つかりませんでした` の場合 → 価格セレクタを更新
 
@@ -156,14 +208,21 @@ const priceSelectors = [
 
 - Consoleで抽出された価格・面積の値を確認
 - 価格または面積が正しく抽出できていない場合、`extractNumber()` 関数を修正
-- SUUMOのテキスト形式が変わった可能性あり（例: 「3,000万円」→「3000万円」）
+- テキスト形式が変わった可能性あり（例: 「3,000万円」→「3000万円」）
 
 ### 詳細ページで表示されない場合
 
 - `propertyCards.length === 0` で詳細ページと判定
-- 物件概要テーブルから価格・面積を取得しているか確認
-- Consoleで `[SUUMO坪単価] 詳細ページとして処理` が出ているか確認
-- `[SUUMO坪単価] 物件概要から取得` で価格・面積が正しく取得できているか確認
+- SUUMO: 物件概要テーブルから価格・面積を取得しているか確認
+- 三井のリハウス: `.text-price-regular.price-size` と `.building-info` から取得しているか確認
+- Consoleで `詳細ページとして処理` が出ているか確認
+- 価格・面積が正しく取得できているか確認
+
+### 三井のリハウスで面積が正しく取得できない場合
+
+- 複数の`.paragraph-body`要素が存在し、住所情報を取得している可能性
+- content.js:156-176 で、㎡を含む要素のみを選択するロジックが動作しているか確認
+- Consoleで「面積テキスト」のログを確認し、住所（「徒歩X分」など）ではなく面積情報が取得されているか確認
 
 ### ページ読み込みが終わらない場合
 

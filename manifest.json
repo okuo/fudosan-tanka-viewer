@@ -1,16 +1,18 @@
 {
   "manifest_version": 3,
-  "name": "SUUMO 坪単価・平米単価表示",
-  "version": "1.0.0",
-  "description": "SUUMOの物件ページに坪単価と平米単価を自動表示します",
+  "name": "不動産坪単価・平米単価表示",
+  "version": "1.1.0",
+  "description": "SUUMO、三井のリハウスの物件ページに坪単価と平米単価を自動表示します",
   "permissions": [],
   "host_permissions": [
-    "*://*.suumo.jp/*"
+    "*://*.suumo.jp/*",
+    "*://*.rehouse.co.jp/*"
   ],
   "content_scripts": [
     {
       "matches": [
-        "*://*.suumo.jp/*"
+        "*://*.suumo.jp/*",
+        "*://*.rehouse.co.jp/*"
       ],
       "js": ["content.js"],
       "css": ["styles.css"],
