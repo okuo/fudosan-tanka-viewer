@@ -10,6 +10,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - SUUMO（スーモ）
 - 三井のリハウス
 - アットホーム
+- ホームズ
 
 **対応ページ:**
 - SUUMO
@@ -20,6 +21,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - 詳細ページ（例: https://www.rehouse.co.jp/buy/mansion/bkdetail/F1FAGA2C/）
 - アットホーム
   - 一覧ページ（例: https://www.athome.co.jp/mansion/chuko/tokyo/chuo-city/list/）
+  - 詳細ページ（例: https://www.athome.co.jp/mansion/1012995991/）
+- ホームズ
+  - 一覧ページ（例: https://www.homes.co.jp/mansion/chuko/list/）
+  - 詳細ページ（例: https://www.homes.co.jp/mansion/b-1193620002052/）
 
 **主な機能:**
 - 億円表記の価格を正しく計算（例: 2億5990万円 = 25990万円）
@@ -54,8 +59,9 @@ fudosan-tanka-viewer/
    - SUUMO（例：https://suumo.jp/ms/chuko/tokyo/）
    - 三井のリハウス（例：https://www.rehouse.co.jp/buy/mansion/prefecture/13/city/13102/）
    - アットホーム（例：https://www.athome.co.jp/mansion/chuko/tokyo/chuo-city/list/）
+   - ホームズ（例：https://www.homes.co.jp/mansion/chuko/list/）
 2. Chrome DevToolsを開く（F12）
-3. Consoleタブで `[SUUMO坪単価]`、`[REHOUSE坪単価]`、または `[ATHOME坪単価]` プレフィックスのログを確認
+3. Consoleタブで `[SUUMO坪単価]`、`[REHOUSE坪単価]`、`[ATHOME坪単価]`、または `[HOMES坪単価]` プレフィックスのログを確認
 4. Elementsタブで `.suumo-unit-price` クラスの要素を確認
 
 **デバッグログの見方:**
@@ -163,6 +169,38 @@ fudosan-tanka-viewer/
   - 注意: 専有面積を含むブロック内の `<span>` 要素から「40.00m²」形式の値を取得
   - `textContent.includes('専有面積')` で専有面積ブロックを絞り込み
 
+**詳細ページ - 価格要素:**
+- `.price-main` （価格表示要素、例: `7,620万円`）
+
+**詳細ページ - 面積要素:**
+- テーブルの `<th>専有面積</th>` の次の `<td>` 要素（例: `43.92m²（壁芯）`）
+
+**詳細ページ - 表示位置:**
+- 価格要素の直下に坪単価・平米単価を挿入
+
+#### ホームズ
+
+**一覧ページ - 物件カード:**
+- `.bukkenSpec table` （通常の一覧ページ：td.priceとtd.spaceの両方を持つtable要素）
+- `.unitSummary tbody tr` （グルーピング一覧ページ：マンションごとにまとめられた物件リスト）
+
+**一覧ページ - 価格要素:**
+- `td.price` （通常の一覧ページ：価格表示要素）
+- `.verticalTable` 内の `<th>価格</th>` の次の `<td>` 要素 （グルーピング一覧ページ）
+
+**一覧ページ - 面積要素:**
+- `td.space` （通常の一覧ページ：専有面積表示要素）
+- `.verticalTable` 内の `<th>専有面積</th>` の次の `<td>` 要素 （グルーピング一覧ページ）
+
+**詳細ページ - 価格要素:**
+- `[data-component="price"]` （価格表示要素、例: `16,500万円`）
+
+**詳細ページ - 面積要素:**
+- `[data-component="occupiedArea"]` （専有面積表示要素、例: `75.8㎡(壁心)`）
+
+**詳細ページ - 表示位置:**
+- 価格要素の直下に坪単価・平米単価を挿入
+
 ## HTML構造が変わった場合
 
 ### SUUMOのセレクタ更新
@@ -205,17 +243,30 @@ if (SITE_TYPE === 'ATHOME') {
 }
 ```
 
+### ホームズのセレクタ更新
+
+同様に、`SITE_TYPE === 'HOMES'` の分岐内でセレクタを更新：
+
+```javascript
+if (SITE_TYPE === 'HOMES') {
+  priceSelectors = [
+    '.新しいクラス名',  // 追加
+    'td.price',
+    // ...既存のセレクタ
+  ];
+}
+```
+
 ## 今後の展開
 
-- ホームズ対応：新しいcontent scriptを追加
-- manifest.jsonの `content_scripts` に新しいマッチパターンを追加
+- 他の不動産サイト対応を追加可能
 
 ## トラブルシューティング
 
 ### 坪単価が表示されない場合
 
 **ステップ1: ログ確認**
-- Consoleで `[SUUMO坪単価]`、`[REHOUSE坪単価]`、または `[ATHOME坪単価]` ログを確認
+- Consoleで `[SUUMO坪単価]`、`[REHOUSE坪単価]`、`[ATHOME坪単価]`、または `[HOMES坪単価]` ログを確認
 - `物件カード数: 0` の場合 → 物件要素のセレクタが間違っている
 - `価格要素が見つかりませんでした` の場合 → 価格セレクタを更新
 
@@ -245,7 +296,8 @@ const priceSelectors = [
 - `propertyCards.length === 0` で詳細ページと判定
 - SUUMO: 物件概要テーブルから価格・面積を取得しているか確認
 - 三井のリハウス: `.text-price-regular.price-size` と `.building-info` から取得しているか確認
-- アットホーム: 詳細ページ未対応（一覧ページのみ対応）
+- アットホーム: `.price-main` とテーブルの `<th>専有面積</th>` の次の `<td>` から取得しているか確認
+- ホームズ: `[data-component="price"]` と `[data-component="occupiedArea"]` から取得しているか確認
 - Consoleで `詳細ページとして処理` が出ているか確認
 - 価格・面積が正しく取得できているか確認
 
