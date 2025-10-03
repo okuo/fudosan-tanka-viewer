@@ -10,7 +10,11 @@ const processedElements = new Set();
 const calculationCache = new Map();
 
 // 現在のサイトを判定
-const SITE_TYPE = window.location.hostname.includes('rehouse.co.jp') ? 'REHOUSE' : 'SUUMO';
+const SITE_TYPE = window.location.hostname.includes('rehouse.co.jp')
+  ? 'REHOUSE'
+  : window.location.hostname.includes('athome.co.jp')
+    ? 'ATHOME'
+    : 'SUUMO';
 
 /**
  * 文字列から数値を抽出（カンマ区切り、億円表記、面積表記に対応）
@@ -102,6 +106,11 @@ function processProperty(element) {
       '.price-text',                             // 三井のリハウス一覧ページ
       '[class*="price"]',                        // 汎用パターン
     ];
+  } else if (SITE_TYPE === 'ATHOME') {
+    priceSelectors = [
+      '.property-price',                         // アットホーム一覧ページ
+      '[class*="price"]',                        // 汎用パターン
+    ];
   } else {
     priceSelectors = [
       '.dottable-value',                         // SUUMO一覧ページ（新）
@@ -145,6 +154,11 @@ function processProperty(element) {
       '.paragraph-body',                         // 三井のリハウス一覧ページ（面積を含む段落）
       '[class*="area"]',                         // 汎用パターン
     ];
+  } else if (SITE_TYPE === 'ATHOME') {
+    areaSelectors = [
+      '.property-detail-table__block',           // アットホーム一覧ページ（専有面積ブロック）
+      '[class*="area"]',                         // 汎用パターン
+    ];
   } else {
     areaSelectors = [
       '.dkr-cassetteitem_detail_text--area',   // SUUMO一覧ページ
@@ -163,6 +177,24 @@ function processProperty(element) {
           areaElement = el;
           console.log(`[${SITE_TYPE}坪単価] 面積要素発見:`, selector, areaElement);
           break;
+        }
+      }
+      if (areaElement) break;
+    } else if (SITE_TYPE === 'ATHOME' && selector === '.property-detail-table__block') {
+      // アットホームの場合、専有面積を含むブロックを探す
+      const elements = element.querySelectorAll(selector);
+      for (const el of elements) {
+        if (el.textContent.includes('専有面積')) {
+          // 専有面積ブロック内のspanから「40.00m²」のような値を取得
+          const spans = el.querySelectorAll('span');
+          for (const span of spans) {
+            if (span.textContent.includes('m') || span.textContent.includes('㎡')) {
+              areaElement = span;
+              console.log(`[${SITE_TYPE}坪単価] 面積要素発見:`, selector, areaElement);
+              break;
+            }
+          }
+          if (areaElement) break;
         }
       }
       if (areaElement) break;
@@ -326,6 +358,8 @@ function processAllProperties() {
   let propertyCards = [];
   if (SITE_TYPE === 'REHOUSE') {
     propertyCards = document.querySelectorAll('.property-index-card');
+  } else if (SITE_TYPE === 'ATHOME') {
+    propertyCards = document.querySelectorAll('.card-box-inner__detail');
   } else {
     propertyCards = document.querySelectorAll('.cassetteitem, .dottable--cassette, [class*="cassette"]');
   }

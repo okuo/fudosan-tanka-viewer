@@ -9,6 +9,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **対応サイト:**
 - SUUMO（スーモ）
 - 三井のリハウス
+- アットホーム
 
 **対応ページ:**
 - SUUMO
@@ -17,6 +18,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - 三井のリハウス
   - 一覧ページ（例: https://www.rehouse.co.jp/buy/mansion/prefecture/13/city/13102/）
   - 詳細ページ（例: https://www.rehouse.co.jp/buy/mansion/bkdetail/F1FAGA2C/）
+- アットホーム
+  - 一覧ページ（例: https://www.athome.co.jp/mansion/chuko/tokyo/chuo-city/list/）
 
 **主な機能:**
 - 億円表記の価格を正しく計算（例: 2億5990万円 = 25990万円）
@@ -50,8 +53,9 @@ fudosan-tanka-viewer/
 1. 対象サイトの物件ページを開く
    - SUUMO（例：https://suumo.jp/ms/chuko/tokyo/）
    - 三井のリハウス（例：https://www.rehouse.co.jp/buy/mansion/prefecture/13/city/13102/）
+   - アットホーム（例：https://www.athome.co.jp/mansion/chuko/tokyo/chuo-city/list/）
 2. Chrome DevToolsを開く（F12）
-3. Consoleタブで `[SUUMO坪単価]` または `[REHOUSE坪単価]` プレフィックスのログを確認
+3. Consoleタブで `[SUUMO坪単価]`、`[REHOUSE坪単価]`、または `[ATHOME坪単価]` プレフィックスのログを確認
 4. Elementsタブで `.suumo-unit-price` クラスの要素を確認
 
 **デバッグログの見方:**
@@ -146,6 +150,19 @@ fudosan-tanka-viewer/
 **詳細ページ - 表示位置:**
 - 価格要素の直下に坪単価・平米単価を挿入
 
+#### アットホーム
+
+**一覧ページ - 物件カード:**
+- `.card-box-inner__detail` （物件カードコンテナ）
+
+**一覧ページ - 価格要素:**
+- `.property-price` （価格表示要素）
+
+**一覧ページ - 面積要素:**
+- `.property-detail-table__block` （専有面積ブロック）
+  - 注意: 専有面積を含むブロック内の `<span>` 要素から「40.00m²」形式の値を取得
+  - `textContent.includes('専有面積')` で専有面積ブロックを絞り込み
+
 ## HTML構造が変わった場合
 
 ### SUUMOのセレクタ更新
@@ -174,10 +191,23 @@ if (SITE_TYPE === 'REHOUSE') {
 }
 ```
 
+### アットホームのセレクタ更新
+
+同様に、`SITE_TYPE === 'ATHOME'` の分岐内でセレクタを更新：
+
+```javascript
+if (SITE_TYPE === 'ATHOME') {
+  priceSelectors = [
+    '.新しいクラス名',  // 追加
+    '.property-price',
+    // ...既存のセレクタ
+  ];
+}
+```
+
 ## 今後の展開
 
-- アットホーム対応：新しいcontent scriptを追加
-- ホームズ対応：同上
+- ホームズ対応：新しいcontent scriptを追加
 - manifest.jsonの `content_scripts` に新しいマッチパターンを追加
 
 ## トラブルシューティング
@@ -185,7 +215,7 @@ if (SITE_TYPE === 'REHOUSE') {
 ### 坪単価が表示されない場合
 
 **ステップ1: ログ確認**
-- Consoleで `[SUUMO坪単価]` または `[REHOUSE坪単価]` ログを確認
+- Consoleで `[SUUMO坪単価]`、`[REHOUSE坪単価]`、または `[ATHOME坪単価]` ログを確認
 - `物件カード数: 0` の場合 → 物件要素のセレクタが間違っている
 - `価格要素が見つかりませんでした` の場合 → 価格セレクタを更新
 
@@ -215,14 +245,22 @@ const priceSelectors = [
 - `propertyCards.length === 0` で詳細ページと判定
 - SUUMO: 物件概要テーブルから価格・面積を取得しているか確認
 - 三井のリハウス: `.text-price-regular.price-size` と `.building-info` から取得しているか確認
+- アットホーム: 詳細ページ未対応（一覧ページのみ対応）
 - Consoleで `詳細ページとして処理` が出ているか確認
 - 価格・面積が正しく取得できているか確認
 
 ### 三井のリハウスで面積が正しく取得できない場合
 
 - 複数の`.paragraph-body`要素が存在し、住所情報を取得している可能性
-- content.js:156-176 で、㎡を含む要素のみを選択するロジックが動作しているか確認
+- content.js:172-182 で、㎡を含む要素のみを選択するロジックが動作しているか確認
 - Consoleで「面積テキスト」のログを確認し、住所（「徒歩X分」など）ではなく面積情報が取得されているか確認
+
+### アットホームで面積が正しく取得できない場合
+
+- `.property-detail-table__block` ブロック内の専有面積を含む要素を探している
+- content.js:183-200 で、専有面積ブロック内の `<span>` 要素から値を取得するロジックが動作しているか確認
+- Consoleで「面積テキスト」のログを確認し、「40.00m²」のような値が取得されているか確認
+- 価格が「6,280」のような数値のみで「万円」が別要素の場合、正しく処理されているか確認
 
 ### ページ読み込みが終わらない場合
 
