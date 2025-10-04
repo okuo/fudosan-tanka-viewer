@@ -102,3 +102,57 @@
     print-color-adjust: exact;
   }
 }
+
+/* CSVエクスポートボタン */
+.fudosan-csv-export-button {
+  position: fixed;
+  top: 100px;
+  right: 20px;
+  z-index: 10000;
+  padding: 12px 20px;
+  background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+  color: #ffffff;
+  border: none;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 4px 12px rgba(17, 153, 142, 0.4);
+  transition: all 0.3s ease;
+  white-space: nowrap;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+.fudosan-csv-export-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(17, 153, 142, 0.5);
+  background: linear-gradient(135deg, #0e7d72 0%, #2fd168 100%);
+}
+
+.fudosan-csv-export-button:active:not(:disabled) {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(17, 153, 142, 0.3);
+}
+
+.fudosan-csv-export-button:disabled {
+  opacity: 0.7;
+  cursor: not-allowed;
+}
+
+/* モバイル対応 */
+@media (max-width: 768px) {
+  .fudosan-csv-export-button {
+    top: auto;
+    bottom: 20px;
+    right: 10px;
+    padding: 10px 16px;
+    font-size: 12px;
+  }
+}
+
+/* 印刷時は非表示 */
+@media print {
+  .fudosan-csv-export-button {
+    display: none;
+  }
+}
