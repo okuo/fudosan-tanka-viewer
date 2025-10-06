@@ -724,17 +724,35 @@ async function fetchDetailPageInfo(url) {
     const doc = parser.parseFromString(html, 'text/html');
 
     const detailInfo = {
-      nameDetail: '',      // 詳細ページの物件名
-      floor: '',           // 階数
-      direction: '',       // 向き
-      buildingFloors: '',  // 建物階数
-      managementFee: '',   // 管理費
-      repairFund: '',      // 修繕積立金
-      totalUnits: '',      // 総戸数
-      structure: '',       // 構造
-      parking: '',         // 駐車場
-      builtDate: '',       // 築年月（詳細）
-      company: ''          // 不動産会社名
+      nameDetail: '',          // 詳細ページの物件名
+      floor: '',               // 階数
+      direction: '',           // 向き
+      buildingFloors: '',      // 建物階数
+      managementFee: '',       // 管理費
+      repairFund: '',          // 修繕積立金
+      totalUnits: '',          // 総戸数
+      structure: '',           // 構造
+      parking: '',             // 駐車場
+      builtDate: '',           // 築年月（詳細）
+      company: '',             // 不動産会社名
+      // 追加項目
+      layout: '',              // 間取り
+      salesUnits: '',          // 販売戸数
+      balconyArea: '',         // バルコニー面積
+      repairFundInitial: '',   // 修繕積立基金
+      otherFees: '',           // 諸費用
+      deliveryTime: '',        // 引渡可能時期
+      landArea: '',            // 敷地面積
+      landRights: '',          // 敷地の権利形態
+      zoning: '',              // 用途地域
+      constructor: '',         // 施工会社
+      energyPerformance: '',   // エネルギー消費性能
+      insulation: '',          // 断熱性能
+      utilityEstimate: '',     // 目安光熱費
+      reform: '',              // リフォーム
+      majorPriceRange: '',     // 最多価格帯
+      restrictions: '',        // その他制限事項
+      notes: ''                // その他概要・特記事項
     };
 
     // 物件名を取得（h1タグから）
@@ -842,6 +860,40 @@ async function fetchDetailPageInfo(url) {
             detailInfo.parking = tdText;
           } else if (thText.includes('築年月')) {
             detailInfo.builtDate = tdText.split(/\(/)[0].trim(); // 括弧以降を除去
+          } else if (thText.includes('間取り')) {
+            detailInfo.layout = tdText;
+          } else if (thText.includes('販売戸数')) {
+            detailInfo.salesUnits = tdText;
+          } else if (thText.includes('その他面積')) {
+            detailInfo.balconyArea = tdText;
+          } else if (thText.includes('修繕積立基金')) {
+            detailInfo.repairFundInitial = tdText.split(/\[/)[0].trim();
+          } else if (thText.includes('諸費用')) {
+            detailInfo.otherFees = tdText;
+          } else if (thText.includes('引渡可能時期')) {
+            detailInfo.deliveryTime = tdText;
+          } else if (thText.includes('敷地面積')) {
+            detailInfo.landArea = tdText;
+          } else if (thText.includes('敷地の権利形態')) {
+            detailInfo.landRights = tdText;
+          } else if (thText.includes('用途地域')) {
+            detailInfo.zoning = tdText;
+          } else if (thText.includes('施工')) {
+            detailInfo.constructor = tdText;
+          } else if (thText.includes('エネルギー消費性能')) {
+            detailInfo.energyPerformance = tdText;
+          } else if (thText.includes('断熱性能')) {
+            detailInfo.insulation = tdText;
+          } else if (thText.includes('目安光熱費')) {
+            detailInfo.utilityEstimate = tdText;
+          } else if (thText.includes('リフォーム')) {
+            detailInfo.reform = tdText;
+          } else if (thText.includes('最多価格帯')) {
+            detailInfo.majorPriceRange = tdText;
+          } else if (thText.includes('その他制限事項')) {
+            detailInfo.restrictions = tdText;
+          } else if (thText.includes('その他概要') || thText.includes('特記事項')) {
+            detailInfo.notes = tdText;
           }
         }
       }
@@ -899,7 +951,7 @@ async function collectPropertyData(progressCallback = null) {
         station: '',
         url: '',
         // 詳細ページから取得する情報
-        nameDetail: '',      // 詳細ページの物件名（これで上書き）
+        nameDetail: '',          // 詳細ページの物件名（これで上書き）
         floor: '',
         direction: '',
         buildingFloors: '',
@@ -909,7 +961,25 @@ async function collectPropertyData(progressCallback = null) {
         structure: '',
         parking: '',
         builtDate: '',
-        company: ''          // 不動産会社名
+        company: '',             // 不動産会社名
+        // 追加項目
+        layout: '',              // 間取り
+        salesUnits: '',          // 販売戸数
+        balconyArea: '',         // バルコニー面積
+        repairFundInitial: '',   // 修繕積立基金
+        otherFees: '',           // 諸費用
+        deliveryTime: '',        // 引渡可能時期
+        landArea: '',            // 敷地面積
+        landRights: '',          // 敷地の権利形態
+        zoning: '',              // 用途地域
+        constructor: '',         // 施工会社
+        energyPerformance: '',   // エネルギー消費性能
+        insulation: '',          // 断熱性能
+        utilityEstimate: '',     // 目安光熱費
+        reform: '',              // リフォーム
+        majorPriceRange: '',     // 最多価格帯
+        restrictions: '',        // その他制限事項
+        notes: ''                // その他概要・特記事項
       };
 
       // 価格を抽出
@@ -1137,6 +1207,12 @@ async function collectPropertyData(progressCallback = null) {
         propertyData.station = '徒歩' + stationMatch[1] + '分';
       }
 
+      // 間取りを抽出（可能な場合）
+      const layoutMatch = allText.match(/(\d+[SLDK]+)/);
+      if (layoutMatch) {
+        propertyData.layout = layoutMatch[1];
+      }
+
       properties.push(propertyData);
       console.log(`[${SITE_TYPE}坪単価] 物件${index + 1}データ収集:`, propertyData);
     } catch (error) {
@@ -1223,7 +1299,25 @@ function generateCSV(properties) {
     parking: '駐車場',
     builtDate: '築年月',
     company: '不動産会社',
-    url: 'URL'
+    url: 'URL',
+    // 追加項目
+    layout: '間取り',
+    salesUnits: '販売戸数',
+    balconyArea: 'バルコニー面積',
+    repairFundInitial: '修繕積立基金',
+    otherFees: '諸費用',
+    deliveryTime: '引渡可能時期',
+    landArea: '敷地面積',
+    landRights: '敷地の権利形態',
+    zoning: '用途地域',
+    constructor: '施工会社',
+    energyPerformance: 'エネルギー消費性能',
+    insulation: '断熱性能',
+    utilityEstimate: '目安光熱費',
+    reform: 'リフォーム',
+    majorPriceRange: '最多価格帯',
+    restrictions: 'その他制限事項',
+    notes: 'その他概要・特記事項'
   };
 
   // nameDetailは内部使用のみなので除外
