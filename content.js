@@ -786,62 +786,63 @@ async function fetchDetailPageInfo(url) {
     for (const table of tables) {
       const rows = table.querySelectorAll('tr');
       for (const row of rows) {
-        const th = row.querySelector('th');
-        const td = row.querySelector('td');
-        if (!th || !td) continue;
+        const ths = row.querySelectorAll('th');
 
-        const thText = th.textContent.trim().replace(/\s+/g, ' ');
-        const tdText = td.textContent.trim().replace(/\s+/g, ' ');
+        // 各thについて、次の兄弟要素がtdかチェック
+        for (const th of ths) {
+          const td = th.nextElementSibling;
+          if (!td || td.tagName !== 'TD') continue;
 
-        // 「所在階/構造・階建」から情報を分離
-        if (thText.includes('所在階') && thText.includes('構造')) {
-          // 例: "12階/RC16階地下1階建"
-          const floorMatch = tdText.match(/^(\d+階)/);
-          if (floorMatch) {
-            detailInfo.floor = floorMatch[1];
-          }
+          const thText = th.textContent.trim().replace(/\s+/g, ' ');
+          const tdText = td.textContent.trim().replace(/\s+/g, ' ');
 
-          const structureMatch = tdText.match(/\/(RC|SRC|鉄骨鉄筋コンクリート|鉄筋コンクリート|鉄骨造|木造|軽量鉄骨)/);
-          if (structureMatch) {
-            detailInfo.structure = structureMatch[1];
-          }
+          // 「所在階/構造・階建」から情報を分離
+          if (thText.includes('所在階') && thText.includes('構造')) {
+            // 例: "12階/RC16階地下1階建"
+            const floorMatch = tdText.match(/^(\d+階)/);
+            if (floorMatch) {
+              detailInfo.floor = floorMatch[1];
+            }
 
-          const buildingFloorsMatch = tdText.match(/(RC|SRC|鉄骨鉄筋コンクリート|鉄筋コンクリート|鉄骨造|木造|軽量鉄骨)(\d+階)/);
-          if (buildingFloorsMatch) {
-            detailInfo.buildingFloors = buildingFloorsMatch[2];
-          }
-        } else if (thText.includes('所在階') && !thText.includes('構造')) {
-          detailInfo.floor = tdText;
-        } else if (thText.includes('バルコニー') && thText.includes('向き')) {
-          const match = tdText.match(/([東西南北]+)向き/);
-          if (match) detailInfo.direction = match[1] + '向き';
-        } else if (thText === '向き' || thText.includes('向き ヒント')) {
-          const match = tdText.match(/([東西南北]+)向き/);
-          if (match) {
-            detailInfo.direction = match[1] + '向き';
-          } else {
-            detailInfo.direction = tdText.split(/\s/)[0]; // 最初の単語のみ
-          }
-        } else if (thText.includes('建物階数')) {
-          detailInfo.buildingFloors = tdText;
-        } else if (thText.includes('管理費') && !thText.includes('修繕')) {
-          // 「2万5000円／月（委託(通勤)）」などから抽出
-          // 「調査中」などの場合はスキップ
-          if (!tdText.includes('調査中') && !tdText.includes('なし') && !tdText.includes('-')) {
+            const structureMatch = tdText.match(/\/(RC|SRC|鉄骨鉄筋コンクリート|鉄筋コンクリート|鉄骨造|木造|軽量鉄骨)/);
+            if (structureMatch) {
+              detailInfo.structure = structureMatch[1];
+            }
+
+            const buildingFloorsMatch = tdText.match(/(RC|SRC|鉄骨鉄筋コンクリート|鉄筋コンクリート|鉄骨造|木造|軽量鉄骨)(\d+階)/);
+            if (buildingFloorsMatch) {
+              detailInfo.buildingFloors = buildingFloorsMatch[2];
+            }
+          } else if (thText.includes('所在階') && !thText.includes('構造')) {
+            detailInfo.floor = tdText;
+          } else if (thText.includes('バルコニー') && thText.includes('向き')) {
+            const match = tdText.match(/([東西南北]+)向き/);
+            if (match) detailInfo.direction = match[1] + '向き';
+          } else if (thText === '向き' || thText.includes('向き')) {
+            const match = tdText.match(/([東西南北]+)向き/);
+            if (match) {
+              detailInfo.direction = match[1] + '向き';
+            } else {
+              detailInfo.direction = tdText.split(/\s/)[0]; // 最初の単語のみ
+            }
+          } else if (thText.includes('建物階数')) {
+            detailInfo.buildingFloors = tdText;
+          } else if (thText.includes('管理費') && !thText.includes('修繕')) {
+            // 「2万5000円／月（委託(通勤)）」などから抽出
             detailInfo.managementFee = tdText.split(/\[/)[0].trim();
-          }
-        } else if (thText.includes('修繕積立金')) {
-          if (!tdText.includes('調査中') && !tdText.includes('なし') && !tdText.includes('-')) {
+            console.log(`[${SITE_TYPE}坪単価] 管理費取得: ${detailInfo.managementFee}`);
+          } else if (thText.includes('修繕積立金')) {
             detailInfo.repairFund = tdText.split(/\[/)[0].trim();
+            console.log(`[${SITE_TYPE}坪単価] 修繕積立金取得: ${detailInfo.repairFund}`);
+          } else if (thText.includes('総戸数')) {
+            detailInfo.totalUnits = tdText;
+          } else if (thText.includes('構造') && !thText.includes('所在階')) {
+            detailInfo.structure = tdText;
+          } else if (thText.includes('駐車場')) {
+            detailInfo.parking = tdText;
+          } else if (thText.includes('築年月')) {
+            detailInfo.builtDate = tdText.split(/\(/)[0].trim(); // 括弧以降を除去
           }
-        } else if (thText.includes('総戸数')) {
-          detailInfo.totalUnits = tdText;
-        } else if (thText.includes('構造') && !thText.includes('所在階')) {
-          detailInfo.structure = tdText;
-        } else if (thText.includes('駐車場')) {
-          detailInfo.parking = tdText;
-        } else if (thText.includes('築年月')) {
-          detailInfo.builtDate = tdText.split(/\(/)[0].trim(); // 括弧以降を除去
         }
       }
     }
@@ -908,10 +909,7 @@ async function collectPropertyData(progressCallback = null) {
         structure: '',
         parking: '',
         builtDate: '',
-        // 重複物件用
-        listingCount: 1,     // 掲載数
-        companies: '',        // 不動産会社リスト
-        allUrls: ''          // 全URL（改行区切り）
+        company: ''          // 不動産会社名
       };
 
       // 価格を抽出
@@ -1174,11 +1172,6 @@ async function collectPropertyData(progressCallback = null) {
           property.name = detailInfo.nameDetail;
         }
 
-        // 不動産会社名をcompaniesフィールドにも設定（グルーピング前の初期値）
-        if (detailInfo.company && !property.companies) {
-          property.companies = detailInfo.company;
-        }
-
         // サーバー負荷軽減: 各リクエスト間に2秒待機
         if (i < properties.length - 1) {
           await sleep(2000);
@@ -1193,80 +1186,6 @@ async function collectPropertyData(progressCallback = null) {
     }
 
     console.log(`[${SITE_TYPE}坪単価] 詳細情報取得完了`);
-  }
-
-  // 重複物件をグルーピング（住所・面積・階数で判定）
-  if (SITE_TYPE === 'SUUMO' && properties.length > 1) {
-    console.log(`[${SITE_TYPE}坪単価] 重複物件のグルーピングを開始...`);
-
-    const groups = new Map();
-
-    // 物件をグループ化
-    for (const property of properties) {
-      // グループキーを生成: 住所 + 面積（小数第1位まで）+ 階数
-      const addressKey = property.address || '';
-      const areaKey = property.area ? Math.round(property.area * 10) / 10 : 0;
-      const floorKey = property.floor || '';
-      const groupKey = `${addressKey}|${areaKey}|${floorKey}`;
-
-      if (!groups.has(groupKey)) {
-        groups.set(groupKey, []);
-      }
-      groups.get(groupKey).push(property);
-    }
-
-    // グループ化された物件を処理
-    const groupedProperties = [];
-    for (const [key, group] of groups) {
-      if (group.length === 1) {
-        // 重複なし：そのまま追加
-        groupedProperties.push(group[0]);
-      } else {
-        // 重複あり：最安値の物件を代表とし、他の情報をマージ
-        console.log(`[${SITE_TYPE}坪単価] 重複物件グループ: ${group.length}件 (${group[0].address})`);
-
-        // 価格でソート（安い順）
-        group.sort((a, b) => (a.price || 999999) - (b.price || 999999));
-
-        const representative = group[0]; // 最安値の物件を代表
-        representative.listingCount = group.length;
-
-        // 不動産会社名を集める
-        const companies = group
-          .map(p => p.company || '')
-          .filter(c => c)
-          .filter((c, i, arr) => arr.indexOf(c) === i); // 重複除去
-
-        representative.companies = companies.join(', ');
-
-        // 全URLを集める
-        const urls = group
-          .map(p => p.url || '')
-          .filter(u => u);
-
-        representative.allUrls = urls.join('\n');
-
-        // 詳細情報は最も充実しているものを採用
-        for (const prop of group) {
-          if (!representative.managementFee && prop.managementFee) {
-            representative.managementFee = prop.managementFee;
-          }
-          if (!representative.direction && prop.direction) {
-            representative.direction = prop.direction;
-          }
-          if (!representative.totalUnits && prop.totalUnits) {
-            representative.totalUnits = prop.totalUnits;
-          }
-        }
-
-        groupedProperties.push(representative);
-      }
-    }
-
-    console.log(`[${SITE_TYPE}坪単価] グルーピング完了: ${properties.length}件 → ${groupedProperties.length}件`);
-
-    console.log(`[${SITE_TYPE}坪単価] 全データ収集完了。物件数:`, groupedProperties.length);
-    return groupedProperties;
   }
 
   console.log(`[${SITE_TYPE}坪単価] 全データ収集完了。物件数:`, properties.length);
@@ -1303,14 +1222,12 @@ function generateCSV(properties) {
     structure: '構造',
     parking: '駐車場',
     builtDate: '築年月',
-    listingCount: '掲載数',
-    companies: '不動産会社',
-    url: 'URL',
-    allUrls: '全URL'
+    company: '不動産会社',
+    url: 'URL'
   };
 
-  // nameDetail, companyは内部使用のみなので除外
-  const headers = Object.keys(properties[0]).filter(key => key !== 'nameDetail' && key !== 'company');
+  // nameDetailは内部使用のみなので除外
+  const headers = Object.keys(properties[0]).filter(key => key !== 'nameDetail');
   const csvRows = [];
 
   // 日本語ヘッダー行を追加
