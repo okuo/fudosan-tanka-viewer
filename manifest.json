@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "不動産坪単価・平米単価表示",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "SUUMO、三井のリハウス、アットホーム、ホームズの物件ページに坪単価と平米単価を自動表示します",
   "permissions": [],
   "host_permissions": [

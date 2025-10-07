@@ -1393,11 +1393,30 @@ function createExportButton() {
   const button = document.createElement('button');
   button.id = 'fudosan-csv-export-button';
   button.className = 'fudosan-csv-export-button';
-  button.innerHTML = '📊 CSVエクスポート';
-  button.title = '現在のページの物件データをCSV形式でダウンロード';
+  button.innerHTML = '📊 CSVエクスポート (β版・SUUMO専用)';
+  button.title = '【ベータ版機能】現在のページの物件データをCSV形式でダウンロード\n・SUUMO専用（他サイトは今後対応予定）\n・無料提供中ですが、将来的に有料化する可能性があります';
 
   // クリックイベント（非同期対応）
   button.addEventListener('click', async () => {
+    // 初回使用時のベータ版確認
+    const hasSeenBetaNotice = localStorage.getItem('csvBetaNoticeShown');
+    if (!hasSeenBetaNotice) {
+      const confirmed = confirm(
+        '📊 CSVエクスポート（ベータ版）\n\n' +
+        '現在無料で提供中ですが、以下の点にご留意ください：\n\n' +
+        '✓ SUUMO専用機能です\n' +
+        '✓ ベータ版のため、仕様が変更される可能性があります\n' +
+        '✓ 将来的に有料化する可能性があります\n\n' +
+        'ご了承いただける場合は「OK」を押してください。'
+      );
+
+      if (!confirmed) {
+        return; // キャンセルされた場合は処理を中断
+      }
+
+      localStorage.setItem('csvBetaNoticeShown', 'true');
+    }
+
     console.log(`[${SITE_TYPE}坪単価] CSVエクスポート開始`);
     button.disabled = true;
     button.innerHTML = '⏳ 収集中...';
@@ -1411,7 +1430,7 @@ function createExportButton() {
       const properties = await collectPropertyData(progressCallback);
       if (properties.length === 0) {
         alert('エクスポート可能な物件データが見つかりませんでした。');
-        button.innerHTML = '📊 CSVエクスポート';
+        button.innerHTML = '📊 CSVエクスポート (β版・SUUMO専用)';
         button.disabled = false;
         return;
       }
@@ -1422,7 +1441,7 @@ function createExportButton() {
 
       button.innerHTML = '✅ 完了！';
       setTimeout(() => {
-        button.innerHTML = '📊 CSVエクスポート';
+        button.innerHTML = '📊 CSVエクスポート (β版・SUUMO専用)';
         button.disabled = false;
       }, 2000);
     } catch (error) {
@@ -1430,7 +1449,7 @@ function createExportButton() {
       alert('CSVエクスポート中にエラーが発生しました。コンソールを確認してください。');
       button.innerHTML = '❌ エラー';
       setTimeout(() => {
-        button.innerHTML = '📊 CSVエクスポート';
+        button.innerHTML = '📊 CSVエクスポート (β版・SUUMO専用)';
         button.disabled = false;
       }, 2000);
     }
