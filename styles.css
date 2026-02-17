@@ -1,66 +1,73 @@
 /**
- * SUUMO 坪単価・平米単価表示スタイル
- * 目立つデザインで価格の下に表示
+ * 不動産坪単価・平米単価表示スタイル
+ * 各不動産サイト（SUUMO、三井のリハウス、アットホーム、ホームズ）共通
  */
 
-.suumo-unit-price {
+/* =============================================
+   Unit Price Badge - Base
+   ============================================= */
+
+.fudosan-unit-price {
   margin-top: 8px;
   padding: 8px 12px;
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  background: #f0f4f8;
+  border-left: 3px solid #2563eb;
   border-radius: 6px;
   font-size: 13px;
   font-weight: 600;
-  color: #ffffff;
+  color: #1e293b;
   display: inline-block;
-  box-shadow: 0 2px 8px rgba(102, 126, 234, 0.3);
-  transition: transform 0.2s ease, box-shadow 0.2s ease;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
   white-space: nowrap;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
-.suumo-unit-price:hover {
-  transform: translateY(-2px);
-  box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-}
+/* =============================================
+   Unit Price Badge - Compact (for table cells)
+   ============================================= */
 
-/* テーブル内ではコンパクトに表示 */
-.suumo-unit-price--compact {
+.fudosan-unit-price--compact {
   margin-top: 4px;
   padding: 4px 8px;
   font-size: 11px;
   display: block;
   max-width: fit-content;
+  border-left-width: 2px;
 }
 
-.suumo-unit-price--compact .unit-price-label {
+.fudosan-unit-price--compact .unit-price-label {
   font-size: 10px;
 }
 
-.suumo-unit-price--compact .unit-price-value {
+.fudosan-unit-price--compact .unit-price-value {
   font-size: 12px;
   margin-right: 6px;
 }
 
-.suumo-unit-price--compact .unit-price-separator {
+.fudosan-unit-price--compact .unit-price-separator {
   margin: 0 4px;
 }
+
+/* =============================================
+   Unit Price Badge - Child Elements
+   ============================================= */
 
 .unit-price-label {
   font-size: 12px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.85);
+  color: #64748b;
   margin-right: 4px;
 }
 
 .unit-price-value {
   font-size: 15px;
   font-weight: 700;
-  color: #ffffff;
+  color: #1e293b;
   margin-right: 10px;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
 }
 
 .unit-price-separator {
-  color: rgba(255, 255, 255, 0.5);
+  color: #cbd5e1;
   margin: 0 8px;
   font-weight: 300;
 }
@@ -68,14 +75,17 @@
 .unit-price-na {
   font-size: 13px;
   font-weight: 500;
-  color: rgba(255, 255, 255, 0.7);
+  color: #64748b;
   margin-right: 10px;
   font-style: italic;
 }
 
-/* レスポンシブ対応 */
+/* =============================================
+   Responsive
+   ============================================= */
+
 @media (max-width: 768px) {
-  .suumo-unit-price {
+  .fudosan-unit-price {
     font-size: 13px;
     padding: 8px 12px;
   }
@@ -93,45 +103,37 @@
   }
 }
 
-/* 印刷時の最適化 */
-@media print {
-  .suumo-unit-price {
-    background: #667eea;
-    box-shadow: none;
-    -webkit-print-color-adjust: exact;
-    print-color-adjust: exact;
-  }
-}
+/* =============================================
+   CSV Export Button
+   ============================================= */
 
-/* CSVエクスポートボタン */
 .fudosan-csv-export-button {
   position: fixed;
-  top: 100px;
-  right: 20px;
+  top: 80px;
+  right: 16px;
   z-index: 10000;
   padding: 12px 20px;
-  background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+  background: #2563eb;
   color: #ffffff;
   border: none;
-  border-radius: 8px;
+  border-radius: 6px;
   font-size: 14px;
   font-weight: 600;
   cursor: pointer;
-  box-shadow: 0 4px 12px rgba(17, 153, 142, 0.4);
-  transition: all 0.3s ease;
+  box-shadow: 0 2px 6px rgba(37, 99, 235, 0.25);
+  transition: background-color 0.2s ease, box-shadow 0.2s ease;
   white-space: nowrap;
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
 }
 
 .fudosan-csv-export-button:hover:not(:disabled) {
-  transform: translateY(-2px);
-  box-shadow: 0 6px 16px rgba(17, 153, 142, 0.5);
-  background: linear-gradient(135deg, #0e7d72 0%, #2fd168 100%);
+  background: #1d4ed8;
+  box-shadow: 0 4px 10px rgba(37, 99, 235, 0.35);
 }
 
 .fudosan-csv-export-button:active:not(:disabled) {
-  transform: translateY(0);
-  box-shadow: 0 2px 8px rgba(17, 153, 142, 0.3);
+  background: #1e40af;
+  box-shadow: 0 1px 4px rgba(37, 99, 235, 0.2);
 }
 
 .fudosan-csv-export-button:disabled {
@@ -139,7 +141,46 @@
   cursor: not-allowed;
 }
 
-/* モバイル対応 */
+/* =============================================
+   CSV Export Progress Bar
+   ============================================= */
+
+.fudosan-export-progress {
+  position: fixed;
+  top: 132px;
+  right: 16px;
+  z-index: 10000;
+  width: 200px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+.fudosan-export-progress-track {
+  width: 100%;
+  height: 4px;
+  background: #e2e8f0;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.fudosan-export-progress-bar {
+  height: 100%;
+  background: #2563eb;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+.fudosan-export-progress-text {
+  margin-top: 4px;
+  font-size: 11px;
+  font-weight: 500;
+  color: #64748b;
+  text-align: right;
+}
+
+/* =============================================
+   CSV Export Button - Responsive
+   ============================================= */
+
 @media (max-width: 768px) {
   .fudosan-csv-export-button {
     top: auto;
@@ -148,11 +189,30 @@
     padding: 10px 16px;
     font-size: 12px;
   }
+
+  .fudosan-export-progress {
+    top: auto;
+    bottom: 60px;
+    right: 10px;
+    width: 160px;
+  }
 }
 
-/* 印刷時は非表示 */
+/* =============================================
+   Print Styles
+   ============================================= */
+
 @media print {
-  .fudosan-csv-export-button {
+  .fudosan-unit-price {
+    background: #f0f4f8;
+    border-left: 3px solid #2563eb;
+    box-shadow: none;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .fudosan-csv-export-button,
+  .fudosan-export-progress {
     display: none;
   }
 }

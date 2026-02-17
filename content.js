@@ -1,6 +1,7 @@
 /**
  * 不動産坪単価・平米単価表示 Chrome拡張
- * SUUMO、三井のリハウスの物件の価格と面積から坪単価・平米単価を自動計算して表示
+ * 不動産サイトの物件の価格と面積から坪単価・平米単価を自動計算して表示
+ * 対応サイト: SUUMO、三井のリハウス、アットホーム、ホームズ
  */
 
 // 既に処理済みの要素を追跡するためのSet
@@ -17,6 +18,24 @@ const SITE_TYPE = window.location.hostname.includes('rehouse.co.jp')
     : window.location.hostname.includes('homes.co.jp')
       ? 'HOMES'
       : 'SUUMO';
+
+// ============================================================
+// ユーティリティ関数
+// ============================================================
+
+/**
+ * ログ出力（サイト名付きプレフィックス）
+ */
+function log(...args) {
+  console.log(`[${SITE_TYPE}坪単価]`, ...args);
+}
+
+/**
+ * エラーログ出力（サイト名付きプレフィックス）
+ */
+function logError(...args) {
+  console.error(`[${SITE_TYPE}坪単価]`, ...args);
+}
 
 /**
  * 文字列から数値を抽出（カンマ区切り、億円表記、面積表記に対応）
@@ -90,6 +109,133 @@ function calculateHeiheiPrice(price, area) {
 }
 
 /**
+ * 指定ミリ秒待機する
+ * @param {number} ms - 待機時間（ミリ秒）
+ */
+function sleep(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+// ============================================================
+// 共通抽出・生成関数（重複排除）
+// ============================================================
+
+/**
+ * 一覧ページの物件カードを取得する共通関数
+ * processAllProperties, collectPropertyData, init で共通利用
+ * @returns {Array} - 物件カード要素の配列
+ */
+function getPropertyCards() {
+  if (SITE_TYPE === 'REHOUSE') {
+    return Array.from(document.querySelectorAll('.property-index-card'));
+  } else if (SITE_TYPE === 'ATHOME') {
+    return Array.from(document.querySelectorAll('.card-box-inner__detail'));
+  } else if (SITE_TYPE === 'HOMES') {
+    // ホームズ: 通常の一覧ページ - td.priceとtd.spaceの両方を持つtableを物件カードとして扱う
+    const allTables = document.querySelectorAll('.bukkenSpec table');
+    const standardCards = Array.from(allTables).filter(table =>
+      table.querySelector('td.price') && table.querySelector('td.space')
+    );
+
+    // ホームズ: グルーピング一覧ページ - .unitSummary内のtr要素を物件カードとして扱う
+    const groupedCards = Array.from(document.querySelectorAll('.unitSummary tbody tr'));
+
+    return [...standardCards, ...groupedCards];
+  } else {
+    return Array.from(document.querySelectorAll('.cassetteitem, .dottable--cassette, [class*="cassette"]'));
+  }
+}
+
+/**
+ * キャッシュ付きの単価計算
+ * @param {number} price - 物件価格（万円）
+ * @param {number} area - 専有面積（㎡）
+ * @returns {{ tsuboPrice: number, heiheiPrice: number }}
+ */
+function getOrCalculateUnitPrice(price, area) {
+  const cacheKey = `${price}_${area}`;
+  if (calculationCache.has(cacheKey)) {
+    return calculationCache.get(cacheKey);
+  }
+  const result = {
+    tsuboPrice: calculateTsuboPrice(price, area),
+    heiheiPrice: calculateHeiheiPrice(price, area)
+  };
+  calculationCache.set(cacheKey, result);
+  return result;
+}
+
+/**
+ * 単価表示用のDOM要素を生成
+ * @param {number} tsuboPrice - 坪単価（万円/坪）
+ * @param {number} heiheiPrice - 平米単価（万円/㎡）
+ * @param {boolean} isCompact - コンパクト表示かどうか
+ * @returns {HTMLDivElement}
+ */
+function createUnitPriceElement(tsuboPrice, heiheiPrice, isCompact) {
+  const div = document.createElement('div');
+  div.className = isCompact
+    ? 'fudosan-unit-price fudosan-unit-price--compact'
+    : 'fudosan-unit-price';
+  div.innerHTML = `
+    <span class="unit-price-label">坪単価:</span>
+    <span class="unit-price-value">${tsuboPrice.toLocaleString()}万円</span>
+    <span class="unit-price-separator">|</span>
+    <span class="unit-price-label">平米単価:</span>
+    <span class="unit-price-value">${heiheiPrice.toLocaleString()}万円</span>
+  `;
+  return div;
+}
+
+/**
+ * 「計算不可」表示用のDOM要素を生成
+ * @param {boolean} isCompact - コンパクト表示かどうか
+ * @returns {HTMLDivElement}
+ */
+function createUnavailableElement(isCompact) {
+  const div = document.createElement('div');
+  div.className = isCompact
+    ? 'fudosan-unit-price fudosan-unit-price--compact'
+    : 'fudosan-unit-price';
+  div.innerHTML = `
+    <span class="unit-price-label">坪単価:</span>
+    <span class="unit-price-na">計算不可</span>
+    <span class="unit-price-separator">|</span>
+    <span class="unit-price-label">平米単価:</span>
+    <span class="unit-price-na">計算不可</span>
+  `;
+  return div;
+}
+
+/**
+ * 対象要素の直後に単価表示を挿入する（既存の表示があれば削除）
+ * 詳細ページでの REHOUSE/HOMES/ATHOME/SUUMO 共通の挿入処理
+ * @param {Element} targetElement - 挿入基準となる要素
+ * @param {HTMLDivElement} unitPriceDiv - 挿入する単価表示要素
+ */
+function insertUnitPriceAfterElement(targetElement, unitPriceDiv) {
+  if (!targetElement || !targetElement.parentElement) {
+    log('挿入先の要素または親要素が見つかりません');
+    return;
+  }
+
+  // 既存の単価表示を削除
+  const existing = targetElement.parentElement.querySelector('.fudosan-unit-price');
+  if (existing) existing.remove();
+
+  // 対象要素の直後に挿入
+  if (targetElement.nextSibling) {
+    targetElement.parentElement.insertBefore(unitPriceDiv, targetElement.nextSibling);
+  } else {
+    targetElement.parentElement.appendChild(unitPriceDiv);
+  }
+}
+
+// ============================================================
+// 物件処理（一覧ページ）
+// ============================================================
+
+/**
  * 物件カード/詳細ページから価格と面積を取得して単価を表示
  * @param {Element} element - 物件要素
  */
@@ -99,7 +245,7 @@ function processProperty(element) {
     return;
   }
 
-  console.log(`[${SITE_TYPE}坪単価] 物件を処理中:`, element);
+  log('物件を処理中:', element);
 
   // 価格要素を検索（サイトごとのパターンに対応）
   let priceSelectors = [];
@@ -134,7 +280,7 @@ function processProperty(element) {
   for (const selector of priceSelectors) {
     priceElement = element.querySelector(selector);
     if (priceElement) {
-      console.log(`[${SITE_TYPE}坪単価] 価格要素発見:`, selector, priceElement);
+      log('価格要素発見:', selector, priceElement);
       break;
     }
   }
@@ -150,7 +296,7 @@ function processProperty(element) {
           const td = th.nextElementSibling;
           if (td && td.tagName === 'TD') {
             priceElement = td;
-            console.log(`[${SITE_TYPE}坪単価] 価格要素発見: verticalTable内のtd`, priceElement);
+            log('価格要素発見: verticalTable内のtd', priceElement);
             break;
           }
         }
@@ -160,13 +306,13 @@ function processProperty(element) {
       const td = element.querySelector('td');
       if (th && th.textContent.includes('価格') && td) {
         priceElement = td;
-        console.log(`[${SITE_TYPE}坪単価] 価格要素発見: テーブル行のtd`, priceElement);
+        log('価格要素発見: テーブル行のtd', priceElement);
       }
     }
   }
 
   if (!priceElement) {
-    console.log(`[${SITE_TYPE}坪単価] 価格要素が見つかりませんでした`);
+    log('価格要素が見つかりませんでした');
     return;
   }
 
@@ -203,7 +349,7 @@ function processProperty(element) {
       for (const el of elements) {
         if (el.textContent.includes('㎡') || el.textContent.includes('m2') || el.textContent.includes('m')) {
           areaElement = el;
-          console.log(`[${SITE_TYPE}坪単価] 面積要素発見:`, selector, areaElement);
+          log('面積要素発見:', selector, areaElement);
           break;
         }
       }
@@ -218,7 +364,7 @@ function processProperty(element) {
           for (const span of spans) {
             if (span.textContent.includes('m') || span.textContent.includes('㎡')) {
               areaElement = span;
-              console.log(`[${SITE_TYPE}坪単価] 面積要素発見:`, selector, areaElement);
+              log('面積要素発見:', selector, areaElement);
               break;
             }
           }
@@ -229,7 +375,7 @@ function processProperty(element) {
     } else {
       areaElement = element.querySelector(selector);
       if (areaElement) {
-        console.log(`[${SITE_TYPE}坪単価] 面積要素発見:`, selector, areaElement);
+        log('面積要素発見:', selector, areaElement);
         break;
       }
     }
@@ -242,7 +388,7 @@ function processProperty(element) {
       if (dt.textContent.includes('専有面積')) {
         areaElement = dt.nextElementSibling;
         if (areaElement && areaElement.tagName === 'DD') {
-          console.log(`[${SITE_TYPE}坪単価] 面積要素発見: <dt>専有面積</dt>の次のdd`, areaElement);
+          log('面積要素発見: <dt>専有面積</dt>の次のdd', areaElement);
           break;
         }
       }
@@ -258,7 +404,7 @@ function processProperty(element) {
         const testExtract = extractNumber(span.textContent);
         if (testExtract && testExtract > 0) {
           areaElement = span;
-          console.log(`[${SITE_TYPE}坪単価] 面積要素発見: 専有面積を含むspan`, areaElement);
+          log('面積要素発見: 専有面積を含むspan', areaElement);
           break;
         }
       }
@@ -276,7 +422,7 @@ function processProperty(element) {
           const td = th.nextElementSibling;
           if (td && td.tagName === 'TD') {
             areaElement = td;
-            console.log(`[${SITE_TYPE}坪単価] 面積要素発見: verticalTable内のtd`, areaElement);
+            log('面積要素発見: verticalTable内のtd', areaElement);
             break;
           }
         }
@@ -290,7 +436,7 @@ function processProperty(element) {
           const td = row.querySelector('td');
           if (th && th.textContent.includes('専有面積') && td) {
             areaElement = td;
-            console.log(`[${SITE_TYPE}坪単価] 面積要素発見: テーブル行のtd`, areaElement);
+            log('面積要素発見: テーブル行のtd', areaElement);
             break;
           }
         }
@@ -302,68 +448,35 @@ function processProperty(element) {
   const priceText = priceElement.textContent;
   const areaText = areaElement ? areaElement.textContent : null;
 
-  console.log(`[${SITE_TYPE}坪単価] 価格テキスト:`, priceText);
-  console.log(`[${SITE_TYPE}坪単価] 面積テキスト:`, areaText);
+  log('価格テキスト:', priceText);
+  log('面積テキスト:', areaText);
 
   const price = extractNumber(priceText);
   const area = extractNumber(areaText);
 
-  console.log(`[${SITE_TYPE}坪単価] 価格:`, price, '万円');
-  console.log(`[${SITE_TYPE}坪単価] 面積:`, area, '㎡');
-
-  // 単価表示要素を作成
-  const unitPriceDiv = document.createElement('div');
+  log('価格:', price, '万円');
+  log('面積:', area, '㎡');
 
   // テーブル内の場合はコンパクトなスタイルを適用
   const isInTable = priceElement.closest('table') !== null;
-  if (isInTable) {
-    unitPriceDiv.className = 'suumo-unit-price suumo-unit-price--compact';
-  } else {
-    unitPriceDiv.className = 'suumo-unit-price';
-  }
 
+  // 単価表示要素を作成
+  let unitPriceDiv;
   if (price && area && price > 0 && area > 0) {
-    // キャッシュキーを生成
-    const cacheKey = `${price}_${area}`;
-
-    // キャッシュから取得、なければ計算
-    let tsuboPrice, heiheiPrice;
-    if (calculationCache.has(cacheKey)) {
-      const cached = calculationCache.get(cacheKey);
-      tsuboPrice = cached.tsuboPrice;
-      heiheiPrice = cached.heiheiPrice;
-      console.log(`[${SITE_TYPE}坪単価] キャッシュから取得 - 坪単価:`, tsuboPrice, '万円/坪, 平米単価:', heiheiPrice, '万円/㎡');
-    } else {
-      tsuboPrice = calculateTsuboPrice(price, area);
-      heiheiPrice = calculateHeiheiPrice(price, area);
-      calculationCache.set(cacheKey, { tsuboPrice, heiheiPrice });
-      console.log(`[${SITE_TYPE}坪単価] 計算結果 - 坪単価:`, tsuboPrice, '万円/坪, 平米単価:', heiheiPrice, '万円/㎡');
-    }
-
-    unitPriceDiv.innerHTML = `
-      <span class="unit-price-label">坪単価:</span>
-      <span class="unit-price-value">${tsuboPrice.toLocaleString()}万円</span>
-      <span class="unit-price-separator">|</span>
-      <span class="unit-price-label">平米単価:</span>
-      <span class="unit-price-value">${heiheiPrice.toLocaleString()}万円</span>
-    `;
+    const { tsuboPrice, heiheiPrice } = getOrCalculateUnitPrice(price, area);
+    log('計算結果 - 坪単価:', tsuboPrice, '万円/坪, 平米単価:', heiheiPrice, '万円/㎡');
+    unitPriceDiv = createUnitPriceElement(tsuboPrice, heiheiPrice, isInTable);
   } else {
-    console.log(`[${SITE_TYPE}坪単価] 計算不可 - 価格または面積が不正`);
-    unitPriceDiv.innerHTML = `
-      <span class="unit-price-label">坪単価:</span>
-      <span class="unit-price-na">計算不可</span>
-      <span class="unit-price-separator">|</span>
-      <span class="unit-price-label">平米単価:</span>
-      <span class="unit-price-na">計算不可</span>
-    `;
+    log('計算不可 - 価格または面積が不正');
+    unitPriceDiv = createUnavailableElement(isInTable);
   }
 
   // 既存の単価表示があれば削除
-  const existingInParent = priceElement.parentElement?.querySelector('.suumo-unit-price');
+  const existingInParent = priceElement.parentElement?.querySelector('.fudosan-unit-price');
   if (existingInParent) {
     existingInParent.remove();
   }
-  const existingInElement = priceElement.querySelector('.suumo-unit-price');
+  const existingInElement = priceElement.querySelector('.fudosan-unit-price');
   if (existingInElement) {
     existingInElement.remove();
   }
@@ -371,7 +484,7 @@ function processProperty(element) {
   // テーブル内の場合は価格要素（td）の中に追加
   if (isInTable) {
     priceElement.appendChild(unitPriceDiv);
-    console.log(`[${SITE_TYPE}坪単価] 単価表示をテーブル内に挿入しました`);
+    log('単価表示をテーブル内に挿入しました');
   } else {
     // 通常の場合は価格要素の後に挿入
     const priceParent = priceElement.parentElement;
@@ -381,9 +494,9 @@ function processProperty(element) {
       } else {
         priceParent.appendChild(unitPriceDiv);
       }
-      console.log(`[${SITE_TYPE}坪単価] 単価表示を挿入しました`);
+      log('単価表示を挿入しました');
     } else {
-      console.log(`[${SITE_TYPE}坪単価] 価格要素の親要素が見つかりません`);
+      log('価格要素の親要素が見つかりません');
       return;
     }
   }
@@ -392,277 +505,187 @@ function processProperty(element) {
   processedElements.add(element);
 }
 
+// ============================================================
+// 一覧ページ処理 / 詳細ページ処理
+// ============================================================
+
 /**
- * ページ内のすべての物件を処理
+ * 一覧ページの全物件カードを処理
+ * @param {Array} cards - 物件カード要素の配列
  */
-function processAllProperties() {
-  console.log(`[${SITE_TYPE}坪単価] processAllProperties開始`);
-
-  // 物件カード（一覧ページ）をサイトごとに検索
-  let propertyCards = [];
-  if (SITE_TYPE === 'REHOUSE') {
-    propertyCards = document.querySelectorAll('.property-index-card');
-  } else if (SITE_TYPE === 'ATHOME') {
-    propertyCards = document.querySelectorAll('.card-box-inner__detail');
-  } else if (SITE_TYPE === 'HOMES') {
-    // ホームズ: 通常の一覧ページ - td.priceとtd.spaceの両方を持つtableを物件カードとして扱う
-    const allTables = document.querySelectorAll('.bukkenSpec table');
-    const standardCards = Array.from(allTables).filter(table =>
-      table.querySelector('td.price') && table.querySelector('td.space')
-    );
-
-    // ホームズ: グルーピング一覧ページ - .unitSummary内のtr要素を物件カードとして扱う
-    const groupedCards = document.querySelectorAll('.unitSummary tbody tr');
-
-    propertyCards = [...standardCards, ...groupedCards];
-  } else {
-    propertyCards = document.querySelectorAll('.cassetteitem, .dottable--cassette, [class*="cassette"]');
-  }
-
-  console.log(`[${SITE_TYPE}坪単価] 物件カード数:`, propertyCards.length);
-  propertyCards.forEach(card => {
+function processListPage(cards) {
+  log('一覧ページとして処理 cards:', cards.length);
+  cards.forEach(card => {
     processProperty(card);
   });
+}
 
-  // 詳細ページ: 物件カードがない場合
-  if (propertyCards.length === 0) {
-    console.log(`[${SITE_TYPE}坪単価] 詳細ページとして処理`);
-    console.log(`[${SITE_TYPE}坪単価] URL:`, window.location.href);
+/**
+ * 詳細ページの価格・面積を取得して単価を表示
+ */
+function processDetailPage() {
+  log('詳細ページとして処理');
+  log('URL:', window.location.href);
 
-    // 物件概要テーブルから価格と面積を取得
-    let detailPrice = null;
-    let detailArea = null;
-    let priceElement = null;
+  // 物件概要テーブルから価格と面積を取得
+  let detailPrice = null;
+  let detailArea = null;
+  let priceElement = null;
 
-    if (SITE_TYPE === 'REHOUSE') {
-      // 三井のリハウス詳細ページ
-      // 価格要素を取得
-      priceElement = document.querySelector('.text-price-regular.price-size') ||
-                     document.querySelector('.building-price-info');
+  if (SITE_TYPE === 'REHOUSE') {
+    // 三井のリハウス詳細ページ
+    priceElement = document.querySelector('.text-price-regular.price-size') ||
+                   document.querySelector('.building-price-info');
+    const areaElement = document.querySelector('.building-info');
 
-      // 面積要素を取得
-      const areaElement = document.querySelector('.building-info');
+    if (priceElement && areaElement) {
+      detailPrice = extractNumber(priceElement.textContent);
+      detailArea = extractNumber(areaElement.textContent);
+      log('詳細ページから取得 - 価格:', detailPrice, '万円, 面積:', detailArea, '㎡');
+    }
+  } else if (SITE_TYPE === 'HOMES') {
+    // ホームズ詳細ページ
+    priceElement = document.querySelector('[data-component="price"]');
+    const areaElement = document.querySelector('[data-component="occupiedArea"]');
 
-      if (priceElement && areaElement) {
-        detailPrice = extractNumber(priceElement.textContent);
-        detailArea = extractNumber(areaElement.textContent);
-        console.log(`[${SITE_TYPE}坪単価] 詳細ページから取得 - 価格:`, detailPrice, '万円, 面積:', detailArea, '㎡');
+    if (priceElement && areaElement) {
+      detailPrice = extractNumber(priceElement.textContent);
+      detailArea = extractNumber(areaElement.textContent);
+      log('詳細ページから取得 - 価格:', detailPrice, '万円, 面積:', detailArea, '㎡');
+    }
+  } else if (SITE_TYPE === 'ATHOME') {
+    // アットホーム詳細ページ
+    priceElement = document.querySelector('.price-main');
+
+    // 面積要素を取得（テーブルから）
+    let areaElement = null;
+    const tables = document.querySelectorAll('table');
+    for (const table of tables) {
+      const rows = table.querySelectorAll('tr');
+      for (const row of rows) {
+        const th = row.querySelector('th');
+        const td = row.querySelector('td');
+        if (th && th.textContent.trim() === '専有面積' && td) {
+          areaElement = td;
+          break;
+        }
       }
-    } else if (SITE_TYPE === 'HOMES') {
-      // ホームズ詳細ページ
-      // 価格要素を取得
-      priceElement = document.querySelector('[data-component="price"]');
+      if (areaElement) break;
+    }
 
-      // 面積要素を取得
-      const areaElement = document.querySelector('[data-component="occupiedArea"]');
+    if (priceElement && areaElement) {
+      detailPrice = extractNumber(priceElement.textContent);
+      detailArea = extractNumber(areaElement.textContent);
+      log('詳細ページから取得 - 価格:', detailPrice, '万円, 面積:', detailArea, '㎡');
+    }
+  } else {
+    // SUUMO詳細ページ（テーブル形式）
+    const tables = document.querySelectorAll('table');
+    log('テーブル数:', tables.length);
 
-      if (priceElement && areaElement) {
-        detailPrice = extractNumber(priceElement.textContent);
-        detailArea = extractNumber(areaElement.textContent);
-        console.log(`[${SITE_TYPE}坪単価] 詳細ページから取得 - 価格:`, detailPrice, '万円, 面積:', detailArea, '㎡');
+    for (const table of tables) {
+      const rows = table.querySelectorAll('tr');
+      let priceRow = null;
+      let areaRow = null;
+
+      for (const row of rows) {
+        const th = row.querySelector('th');
+        if (th && th.textContent.includes('価格')) {
+          priceRow = row;
+        }
+        if (th && th.textContent.includes('専有面積')) {
+          areaRow = row;
+        }
       }
-    } else if (SITE_TYPE === 'ATHOME') {
-      // アットホーム詳細ページ
-      // 価格要素を取得
-      priceElement = document.querySelector('.price-main');
 
-      // 面積要素を取得（テーブルから）
-      let areaElement = null;
+      if (priceRow && areaRow) {
+        const priceTd = priceRow.querySelector('td');
+        const areaTd = areaRow.querySelector('td');
+
+        if (priceTd && areaTd) {
+          detailPrice = extractNumber(priceTd.textContent);
+          detailArea = extractNumber(areaTd.textContent);
+          log('物件概要から取得 - 価格:', detailPrice, '万円, 面積:', detailArea, '㎡');
+          break;
+        }
+      }
+    }
+  }
+
+  // 価格と面積が取得できた場合、各箇所に表示
+  if (detailPrice && detailArea && detailPrice > 0 && detailArea > 0) {
+    const { tsuboPrice, heiheiPrice } = getOrCalculateUnitPrice(detailPrice, detailArea);
+    log('計算完了 - 坪単価:', tsuboPrice, '万円/坪, 平米単価:', heiheiPrice, '万円/㎡');
+
+    // 上部の価格表示の下に追加
+    if (SITE_TYPE === 'SUUMO') {
+      const topPriceElement = document.querySelector('.mt7.b');
+      if (topPriceElement && topPriceElement.parentElement) {
+        const unitPriceDiv = createUnitPriceElement(tsuboPrice, heiheiPrice, false);
+        insertUnitPriceAfterElement(topPriceElement, unitPriceDiv);
+        log('上部に表示を挿入');
+      }
+    } else if (SITE_TYPE === 'REHOUSE' && priceElement) {
+      const unitPriceDiv = createUnitPriceElement(tsuboPrice, heiheiPrice, false);
+      insertUnitPriceAfterElement(priceElement, unitPriceDiv);
+      log('価格表示の下に表示を挿入');
+    } else if (SITE_TYPE === 'HOMES' && priceElement) {
+      const unitPriceDiv = createUnitPriceElement(tsuboPrice, heiheiPrice, false);
+      insertUnitPriceAfterElement(priceElement, unitPriceDiv);
+      log('価格表示の下に表示を挿入');
+    } else if (SITE_TYPE === 'ATHOME' && priceElement) {
+      const unitPriceDiv = createUnitPriceElement(tsuboPrice, heiheiPrice, false);
+      insertUnitPriceAfterElement(priceElement, unitPriceDiv);
+      log('価格表示の下に表示を挿入');
+    }
+
+    // テーブル内の価格行に追加（SUUMO専用）
+    if (SITE_TYPE === 'SUUMO') {
       const tables = document.querySelectorAll('table');
-      for (const table of tables) {
+      tables.forEach((table, tableIdx) => {
         const rows = table.querySelectorAll('tr');
-        for (const row of rows) {
+        rows.forEach((row, rowIdx) => {
           const th = row.querySelector('th');
           const td = row.querySelector('td');
-          if (th && th.textContent.trim() === '専有面積' && td) {
-            areaElement = td;
-            break;
+          if (th && th.textContent.includes('価格') && td) {
+            const existing = td.querySelector('.fudosan-unit-price');
+            if (existing) existing.remove();
+
+            const unitPriceDiv = createUnitPriceElement(tsuboPrice, heiheiPrice, true);
+            td.appendChild(unitPriceDiv);
+            log('テーブル内に表示を挿入 table:', tableIdx, 'row:', rowIdx);
           }
-        }
-        if (areaElement) break;
-      }
-
-      if (priceElement && areaElement) {
-        detailPrice = extractNumber(priceElement.textContent);
-        detailArea = extractNumber(areaElement.textContent);
-        console.log(`[${SITE_TYPE}坪単価] 詳細ページから取得 - 価格:`, detailPrice, '万円, 面積:', detailArea, '㎡');
-      }
-    } else {
-      // SUUMO詳細ページ（テーブル形式）
-      const tables = document.querySelectorAll('table');
-      console.log(`[${SITE_TYPE}坪単価] テーブル数:`, tables.length);
-
-      for (const table of tables) {
-        const rows = table.querySelectorAll('tr');
-        let priceRow = null;
-        let areaRow = null;
-
-        for (const row of rows) {
-          const th = row.querySelector('th');
-          if (th && th.textContent.includes('価格')) {
-            priceRow = row;
-          }
-          if (th && th.textContent.includes('専有面積')) {
-            areaRow = row;
-          }
-        }
-
-        if (priceRow && areaRow) {
-          const priceTd = priceRow.querySelector('td');
-          const areaTd = areaRow.querySelector('td');
-
-          if (priceTd && areaTd) {
-            detailPrice = extractNumber(priceTd.textContent);
-            detailArea = extractNumber(areaTd.textContent);
-            console.log(`[${SITE_TYPE}坪単価] 物件概要から取得 - 価格:`, detailPrice, '万円, 面積:', detailArea, '㎡');
-            break;
-          }
-        }
-      }
-    }
-
-    // 価格と面積が取得できた場合、各箇所に表示
-    if (detailPrice && detailArea && detailPrice > 0 && detailArea > 0) {
-      const cacheKey = `${detailPrice}_${detailArea}`;
-
-      let tsuboPrice, heiheiPrice;
-      if (calculationCache.has(cacheKey)) {
-        const cached = calculationCache.get(cacheKey);
-        tsuboPrice = cached.tsuboPrice;
-        heiheiPrice = cached.heiheiPrice;
-        console.log(`[${SITE_TYPE}坪単価] キャッシュから取得`);
-      } else {
-        tsuboPrice = calculateTsuboPrice(detailPrice, detailArea);
-        heiheiPrice = calculateHeiheiPrice(detailPrice, detailArea);
-        calculationCache.set(cacheKey, { tsuboPrice, heiheiPrice });
-        console.log(`[${SITE_TYPE}坪単価] 計算完了 - 坪単価:`, tsuboPrice, '万円/坪, 平米単価:', heiheiPrice, '万円/㎡');
-      }
-
-      // 上部の価格表示の下に追加
-      if (SITE_TYPE === 'SUUMO') {
-        const topPriceElement = document.querySelector('.mt7.b');
-        if (topPriceElement && topPriceElement.parentElement) {
-          const existing = topPriceElement.parentElement.querySelector('.suumo-unit-price');
-          if (existing) existing.remove();
-
-          const unitPriceDiv = document.createElement('div');
-          unitPriceDiv.className = 'suumo-unit-price';
-          unitPriceDiv.innerHTML = `
-            <span class="unit-price-label">坪単価:</span>
-            <span class="unit-price-value">${tsuboPrice.toLocaleString()}万円</span>
-            <span class="unit-price-separator">|</span>
-            <span class="unit-price-label">平米単価:</span>
-            <span class="unit-price-value">${heiheiPrice.toLocaleString()}万円</span>
-          `;
-
-          if (topPriceElement.nextSibling) {
-            topPriceElement.parentElement.insertBefore(unitPriceDiv, topPriceElement.nextSibling);
-          } else {
-            topPriceElement.parentElement.appendChild(unitPriceDiv);
-          }
-          console.log(`[${SITE_TYPE}坪単価] 上部に表示を挿入`);
-        }
-      } else if (SITE_TYPE === 'REHOUSE' && priceElement) {
-        // 三井のリハウス詳細ページ：価格表示の下に追加
-        const existing = priceElement.parentElement?.querySelector('.suumo-unit-price');
-        if (existing) existing.remove();
-
-        const unitPriceDiv = document.createElement('div');
-        unitPriceDiv.className = 'suumo-unit-price';
-        unitPriceDiv.innerHTML = `
-          <span class="unit-price-label">坪単価:</span>
-          <span class="unit-price-value">${tsuboPrice.toLocaleString()}万円</span>
-          <span class="unit-price-separator">|</span>
-          <span class="unit-price-label">平米単価:</span>
-          <span class="unit-price-value">${heiheiPrice.toLocaleString()}万円</span>
-        `;
-
-        if (priceElement.nextSibling) {
-          priceElement.parentElement.insertBefore(unitPriceDiv, priceElement.nextSibling);
-        } else {
-          priceElement.parentElement.appendChild(unitPriceDiv);
-        }
-        console.log(`[${SITE_TYPE}坪単価] 価格表示の下に表示を挿入`);
-      } else if (SITE_TYPE === 'HOMES' && priceElement) {
-        // ホームズ詳細ページ：価格表示の下に追加
-        const existing = priceElement.parentElement?.querySelector('.suumo-unit-price');
-        if (existing) existing.remove();
-
-        const unitPriceDiv = document.createElement('div');
-        unitPriceDiv.className = 'suumo-unit-price';
-        unitPriceDiv.innerHTML = `
-          <span class="unit-price-label">坪単価:</span>
-          <span class="unit-price-value">${tsuboPrice.toLocaleString()}万円</span>
-          <span class="unit-price-separator">|</span>
-          <span class="unit-price-label">平米単価:</span>
-          <span class="unit-price-value">${heiheiPrice.toLocaleString()}万円</span>
-        `;
-
-        if (priceElement.nextSibling) {
-          priceElement.parentElement.insertBefore(unitPriceDiv, priceElement.nextSibling);
-        } else {
-          priceElement.parentElement.appendChild(unitPriceDiv);
-        }
-        console.log(`[${SITE_TYPE}坪単価] 価格表示の下に表示を挿入`);
-      } else if (SITE_TYPE === 'ATHOME' && priceElement) {
-        // アットホーム詳細ページ：価格表示の下に追加
-        const existing = priceElement.parentElement?.querySelector('.suumo-unit-price');
-        if (existing) existing.remove();
-
-        const unitPriceDiv = document.createElement('div');
-        unitPriceDiv.className = 'suumo-unit-price';
-        unitPriceDiv.innerHTML = `
-          <span class="unit-price-label">坪単価:</span>
-          <span class="unit-price-value">${tsuboPrice.toLocaleString()}万円</span>
-          <span class="unit-price-separator">|</span>
-          <span class="unit-price-label">平米単価:</span>
-          <span class="unit-price-value">${heiheiPrice.toLocaleString()}万円</span>
-        `;
-
-        if (priceElement.nextSibling) {
-          priceElement.parentElement.insertBefore(unitPriceDiv, priceElement.nextSibling);
-        } else {
-          priceElement.parentElement.appendChild(unitPriceDiv);
-        }
-        console.log(`[${SITE_TYPE}坪単価] 価格表示の下に表示を挿入`);
-      }
-
-      // テーブル内の価格行に追加（SUUMO専用）
-      if (SITE_TYPE === 'SUUMO') {
-        const tables = document.querySelectorAll('table');
-        tables.forEach((table, tableIdx) => {
-          const rows = table.querySelectorAll('tr');
-          rows.forEach((row, rowIdx) => {
-            const th = row.querySelector('th');
-            const td = row.querySelector('td');
-            if (th && th.textContent.includes('価格') && td) {
-              const existing = td.querySelector('.suumo-unit-price');
-              if (existing) existing.remove();
-
-              const unitPriceDiv = document.createElement('div');
-              unitPriceDiv.className = 'suumo-unit-price suumo-unit-price--compact';
-              unitPriceDiv.innerHTML = `
-                <span class="unit-price-label">坪単価:</span>
-                <span class="unit-price-value">${tsuboPrice.toLocaleString()}万円</span>
-                <span class="unit-price-separator">|</span>
-                <span class="unit-price-label">平米単価:</span>
-                <span class="unit-price-value">${heiheiPrice.toLocaleString()}万円</span>
-              `;
-              td.appendChild(unitPriceDiv);
-              console.log(`[${SITE_TYPE}坪単価] テーブル内に表示を挿入 table:`, tableIdx, 'row:', rowIdx);
-            }
-          });
         });
-      }
-    } else {
-      console.log(`[${SITE_TYPE}坪単価] 詳細ページで価格・面積が取得できませんでした`);
+      });
     }
-
-    console.log(`[${SITE_TYPE}坪単価] 詳細ページ処理完了。単価表示数:`, document.querySelectorAll('.suumo-unit-price').length);
   } else {
-    console.log(`[${SITE_TYPE}坪単価] 一覧ページとして処理 cards:`, propertyCards.length);
+    log('詳細ページで価格・面積が取得できませんでした');
+  }
+
+  log('詳細ページ処理完了。単価表示数:', document.querySelectorAll('.fudosan-unit-price').length);
+}
+
+/**
+ * ページ内のすべての物件を処理（一覧ページ or 詳細ページに振り分け）
+ */
+function processAllProperties() {
+  log('processAllProperties開始');
+
+  const propertyCards = getPropertyCards();
+  log('物件カード数:', propertyCards.length);
+
+  if (propertyCards.length === 0) {
+    // 詳細ページ: 物件カードがない場合
+    processDetailPage();
+  } else {
+    // 一覧ページ
+    processListPage(propertyCards);
   }
 }
+
+// ============================================================
+// DOM変更監視
+// ============================================================
 
 /**
  * DOM変更を監視して新しい物件が追加されたら処理
@@ -676,8 +699,8 @@ function observeDOMChanges() {
       if (mutation.addedNodes.length > 0) {
         // 追加されたノードをチェック
         for (const node of mutation.addedNodes) {
-          // 自分が追加した.suumo-unit-price要素は無視
-          if (node.nodeType === 1 && !node.classList?.contains('suumo-unit-price')) {
+          // 自分が追加した.fudosan-unit-price要素は無視
+          if (node.nodeType === 1 && !node.classList?.contains('fudosan-unit-price')) {
             shouldProcess = true;
             break;
           }
@@ -698,24 +721,21 @@ function observeDOMChanges() {
   });
 }
 
-/**
- * 指定ミリ秒待機する
- * @param {number} ms - 待機時間（ミリ秒）
- */
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
+// ============================================================
+// 詳細ページ情報取得（サイト別）
+// ============================================================
 
 /**
  * 詳細ページから追加情報を取得
  * @param {string} url - 詳細ページURL
+ * @param {string} siteType - サイトタイプ ('SUUMO', 'REHOUSE', 'ATHOME', 'HOMES')
  * @returns {Object} - 追加情報
  */
-async function fetchDetailPageInfo(url) {
+async function fetchDetailPageInfo(url, siteType = SITE_TYPE) {
   try {
     const response = await fetch(url);
     if (!response.ok) {
-      console.error(`[${SITE_TYPE}坪単価] 詳細ページ取得失敗: ${url}`);
+      console.error(`[${siteType}坪単価] 詳細ページ取得失敗: ${url}`);
       return {};
     }
 
@@ -755,6 +775,19 @@ async function fetchDetailPageInfo(url) {
       notes: ''                // その他概要・特記事項
     };
 
+    // サイト別の処理
+    if (siteType === 'REHOUSE') {
+      // ===== 三井のリハウス =====
+      return extractRehouseDetailInfo(doc, detailInfo);
+    } else if (siteType === 'ATHOME') {
+      // ===== アットホーム =====
+      return extractAthomeDetailInfo(doc, detailInfo);
+    } else if (siteType === 'HOMES') {
+      // ===== ホームズ =====
+      return extractHomesDetailInfo(doc, detailInfo);
+    }
+
+    // ===== SUUMO（既存ロジック） =====
     // 物件名を取得（h1タグから）
     const h1Elements = doc.querySelectorAll('h1, .section_h1-header-title');
     for (const h1 of h1Elements) {
@@ -775,7 +808,6 @@ async function fetchDetailPageInfo(url) {
     // 不動産会社名を取得
     const companyPatterns = [
       { selector: 'th', contains: 'お問い合せ先', getValue: (td) => {
-        // 「野村の仲介+勝どきセンター野村不動産ソリューションズ(株)」から会社名部分を抽出
         const text = td.textContent.trim();
         const match = text.match(/^([^\n\t]+)/);
         return match ? match[1].trim() : text.split(/[\n\t]/)[0].trim();
@@ -846,12 +878,11 @@ async function fetchDetailPageInfo(url) {
           } else if (thText.includes('建物階数')) {
             detailInfo.buildingFloors = tdText;
           } else if (thText.includes('管理費') && !thText.includes('修繕')) {
-            // 「2万5000円／月（委託(通勤)）」などから抽出
             detailInfo.managementFee = tdText.split(/\[/)[0].trim();
-            console.log(`[${SITE_TYPE}坪単価] 管理費取得: ${detailInfo.managementFee}`);
+            log('管理費取得:', detailInfo.managementFee);
           } else if (thText.includes('修繕積立金')) {
             detailInfo.repairFund = tdText.split(/\[/)[0].trim();
-            console.log(`[${SITE_TYPE}坪単価] 修繕積立金取得: ${detailInfo.repairFund}`);
+            log('修繕積立金取得:', detailInfo.repairFund);
           } else if (thText.includes('総戸数')) {
             detailInfo.totalUnits = tdText;
           } else if (thText.includes('構造') && !thText.includes('所在階')) {
@@ -899,42 +930,342 @@ async function fetchDetailPageInfo(url) {
       }
     }
 
-    console.log(`[${SITE_TYPE}坪単価] 詳細情報取得成功: ${url}`, detailInfo);
+    log('詳細情報取得成功:', url, detailInfo);
     return detailInfo;
 
   } catch (error) {
-    console.error(`[${SITE_TYPE}坪単価] 詳細ページ取得エラー: ${url}`, error);
+    logError('詳細ページ取得エラー:', url, error);
     return {};
   }
 }
 
 /**
+ * 三井のリハウス詳細ページから情報を抽出
+ * @param {Document} doc - パースされたHTMLドキュメント
+ * @param {Object} detailInfo - 情報格納オブジェクト
+ * @returns {Object} - 抽出された情報
+ */
+function extractRehouseDetailInfo(doc, detailInfo) {
+  // 物件名を取得（h1タグから）
+  const h1Elements = doc.querySelectorAll('h1');
+  for (const h1 of h1Elements) {
+    const text = h1.textContent.trim();
+    if (text && text.length > 0 && text.length < 100) {
+      detailInfo.nameDetail = text;
+      break;
+    }
+  }
+
+  // テキストから情報を抽出（より厳密なパターンマッチング）
+  const bodyText = doc.body.textContent;
+
+  // 住所を取得: 「所在地」ラベルの直後から取得
+  const addressWithLabelMatch = bodyText.match(/所在地\s*(東京都|神奈川県|千葉県|埼玉県|大阪府|京都府|兵庫県|愛知県|福岡県|北海道)[^(\n)]+?(?=\n|GoogleMaps|スーパー|公園|病院|小学校|中学校|その他|駅|価格|交通|管理費|$)/);
+  if (addressWithLabelMatch) {
+    let address = addressWithLabelMatch[0].replace(/所在地\s*/, '').trim();
+    detailInfo.address = address;
+  } else {
+    // フォールバック: 「所在地」なしで探す
+    const addressMatch = bodyText.match(/(東京都|神奈川県|千葉県|埼玉県|大阪府|京都府|兵庫県|愛知県|福岡県|北海道)[^(\n)]+?(?=\n|GoogleMaps|スーパー|公園|病院|小学校|中学校|その他|駅|価格|交通|管理費|$)/);
+    if (addressMatch) {
+      let address = addressMatch[0].trim();
+      // 買いたい、売りたいなどのメニューが含まれている場合は除外
+      if (address.includes('買いたい') || address.includes('売りたい') || address.includes('借りたい') || address.includes('の中古マンション')) {
+        detailInfo.address = '';
+      } else {
+        detailInfo.address = address;
+      }
+    }
+  }
+
+  // 階数/階建: より厳密なパターン "32階 / 地上32階"
+  const floorMatch = bodyText.match(/(\d+階)\s*[/／]\s*(地上|地下)?(\d+階)/);
+  if (floorMatch) {
+    detailInfo.floor = floorMatch[1];
+    detailInfo.buildingFloors = (floorMatch[2] || '') + floorMatch[3];
+  }
+
+  // 向き: より厳密なパターン
+  const directionMatch = bodyText.match(/(?:向き\s+|バルコニー.*?)(南東|南西|北東|北西|南|北|東|西)(?:\s|階|$)/);
+  if (directionMatch) {
+    detailInfo.direction = directionMatch[1];
+  }
+
+  // 管理費: 最初の1つのみ取得
+  const managementMatch = bodyText.match(/管理費[等\s]*[^\d]*?([0-9,]+円)(?:\s|\/|月|$)/);
+  if (managementMatch) {
+    detailInfo.managementFee = managementMatch[1];
+  }
+
+  // 修繕積立金: 最初の1つのみ取得
+  const repairMatch = bodyText.match(/修繕積立金[等\s]*[^\d]*?([0-9,]+円)(?:\s|\/|月|$)/);
+  if (repairMatch) {
+    detailInfo.repairFund = repairMatch[1];
+  }
+
+  // その他費用: より厳密に取得
+  const otherFeesMatch = bodyText.match(/その他費用\s*([^\n]{0,100}?円[^\n]{0,50})/);
+  if (otherFeesMatch) {
+    let fees = otherFeesMatch[1].trim();
+    // お支払い目安以降を除去
+    const cutIdx = fees.search(/お支払い|取引態様|更新日|物件番号/);
+    if (cutIdx > 0) {
+      fees = fees.substring(0, cutIdx).trim();
+    }
+    detailInfo.otherFees = fees;
+  }
+
+  // 間取り: 数値+LDKの形式に限定
+  const layoutMatch = bodyText.match(/間取り\s*([0-9]+[SLDK]+)(?:\s|専有面積|築年月|階数|\/|$)/);
+  if (layoutMatch) {
+    detailInfo.layout = layoutMatch[1];
+  }
+
+  // バルコニー: 数値+㎡の形式
+  const balconyMatch = bodyText.match(/バルコニー\s*([0-9.]+㎡)(?:\s|現況|駐車場|$)/);
+  if (balconyMatch) {
+    detailInfo.balconyArea = balconyMatch[1];
+  }
+
+  // 総戸数: 数値+戸の形式
+  const totalUnitsMatch = bodyText.match(/総戸数\s*([0-9,]+戸)(?:\s|管理会社|管理形態|$)/);
+  if (totalUnitsMatch) {
+    detailInfo.totalUnits = totalUnitsMatch[1];
+  }
+
+  // 建物構造: より短いマッチング（造まで）
+  const structureMatch = bodyText.match(/建物構造\s*(鉄骨鉄筋コンクリート造|鉄筋コンクリート造|鉄骨造|木造|軽量鉄骨造)(?:\s|総戸数|管理会社|$)/);
+  if (structureMatch) {
+    detailInfo.structure = structureMatch[1];
+  }
+
+  // 駐車場: ハイフンまたは「利用可」「空き無」などの短い情報のみ
+  const parkingMatch = bodyText.match(/駐車場\s*(利用可|空き無|無|－|-|[0-9,]+円)(?:\s|建物構造|総戸数|$)/);
+  if (parkingMatch) {
+    detailInfo.parking = parkingMatch[1].trim();
+  }
+
+  // 築年月: YYYY年MM月築の形式
+  const builtDateMatch = bodyText.match(/築年月\s*(\d{4}年\d{1,2}月)築?(?:\s|階数|階建|\/|$)/);
+  if (builtDateMatch) {
+    detailInfo.builtDate = builtDateMatch[1];
+  }
+
+  // 土地権利: 所有権などの短い情報
+  const landRightsMatch = bodyText.match(/(?:土地権利|敷地の権利形態)\s*(所有権|借地権|定期借地権)(?:\s|分譲会社|施工会社|$)/);
+  if (landRightsMatch) {
+    detailInfo.landRights = landRightsMatch[1];
+  }
+
+  // 施工会社: 会社名（株）まで
+  const constructorMatch = bodyText.match(/施工会社\s*([^\n]{3,50}?(?:株式会社|（株）|\(株\)|[^\s]+))(?:\s*設計会社|備考|引渡|取引態様|$)/);
+  if (constructorMatch) {
+    detailInfo.constructor = constructorMatch[1].trim();
+  }
+
+  // 引渡時期: 即時、相談などの短い情報
+  const deliveryMatch = bodyText.match(/引渡時期\s*(即時|相談|[0-9]{4}年[0-9]{1,2}月[^\s]{0,10})(?:\s|取引態様|更新日|物件番号|$)/);
+  if (deliveryMatch) {
+    detailInfo.deliveryTime = deliveryMatch[1].trim();
+  }
+
+  console.log(`[REHOUSE坪単価] 詳細情報取得:`, detailInfo);
+  return detailInfo;
+}
+
+/**
+ * アットホーム詳細ページから情報を抽出
+ * @param {Document} doc - パースされたHTMLドキュメント
+ * @param {Object} detailInfo - 情報格納オブジェクト
+ * @returns {Object} - 抽出された情報
+ */
+function extractAthomeDetailInfo(doc, detailInfo) {
+  // 物件名を取得（h1タグから）
+  const h1Elements = doc.querySelectorAll('h1');
+  for (const h1 of h1Elements) {
+    const text = h1.textContent.trim();
+    if (text && !text.includes('アットホーム')) {
+      detailInfo.nameDetail = text;
+      break;
+    }
+  }
+
+  const bodyText = doc.body.textContent;
+
+  // 住所を取得
+  const addressMatch = bodyText.match(/(東京都|神奈川県|千葉県|埼玉県|大阪府|京都府|兵庫県|愛知県|福岡県|北海道|[^\n]*?[都道府県])[^\n]{5,80}?(区|市|町|村)[^\n]{0,50}/);
+  if (addressMatch) {
+    // 住所部分を抽出して不要な情報を除去
+    let address = addressMatch[0].trim();
+    // 「階」「築」「専有面積」などが含まれる場合はそこで切る
+    const cutIndex = address.search(/[0-9]+階|築[0-9]+年|専有面積|間取り/);
+    if (cutIndex > 0) {
+      address = address.substring(0, cutIndex).trim();
+    }
+    detailInfo.address = address;
+  }
+
+  // 階建/階: テーブル構造から取得を試みる
+  const tables = doc.querySelectorAll('table');
+  for (const table of tables) {
+    const rows = table.querySelectorAll('tr');
+    for (const row of rows) {
+      const th = row.querySelector('th');
+      const td = row.querySelector('td');
+      if (!th || !td) continue;
+
+      const thText = th.textContent.trim();
+      const tdText = td.textContent.trim();
+
+      if (thText.includes('所在階')) {
+        detailInfo.floor = tdText;
+      } else if (thText.includes('階建')) {
+        detailInfo.buildingFloors = tdText;
+      } else if (thText.includes('間取り')) {
+        detailInfo.layout = tdText;
+      } else if (thText.includes('バルコニー')) {
+        detailInfo.balconyArea = tdText;
+      } else if (thText.includes('管理費')) {
+        detailInfo.managementFee = tdText.split(/[/／]/)[0].trim();
+      } else if (thText.includes('修繕積立金')) {
+        detailInfo.repairFund = tdText.split(/[/／]/)[0].trim();
+      } else if (thText.includes('建物構造') || thText === '構造') {
+        detailInfo.structure = tdText;
+      } else if (thText.includes('総戸数')) {
+        detailInfo.totalUnits = tdText;
+      } else if (thText.includes('駐車場')) {
+        if (tdText !== '－' && tdText !== '-') {
+          detailInfo.parking = tdText;
+        }
+      } else if (thText.includes('築年月')) {
+        detailInfo.builtDate = tdText.split(/[（(]/)[0].trim();
+      } else if (thText.includes('土地権利')) {
+        detailInfo.landRights = tdText;
+      } else if (thText.includes('引渡')) {
+        detailInfo.deliveryTime = tdText;
+      } else if (thText.includes('向き')) {
+        detailInfo.direction = tdText;
+      }
+    }
+  }
+
+  // テーブルで取得できなかった場合のフォールバック（正規表現）
+  if (!detailInfo.layout) {
+    const layoutMatch = bodyText.match(/間取り[:\s]*([0-9]+[SLDK]+)/);
+    if (layoutMatch) detailInfo.layout = layoutMatch[1];
+  }
+
+  if (!detailInfo.builtDate) {
+    const builtDateMatch = bodyText.match(/築年月[:\s]*(\d{4}年\d+月)/);
+    if (builtDateMatch) detailInfo.builtDate = builtDateMatch[1];
+  }
+
+  // 備考から施工会社を抽出
+  const constructorMatch = bodyText.match(/施工[会社社][：:\s]*([^\n]+)/);
+  if (constructorMatch) {
+    detailInfo.constructor = constructorMatch[1].trim();
+  }
+
+  // 用途地域
+  const zoningMatch = bodyText.match(/用途地域[：:\s]*([^\n]+)/);
+  if (zoningMatch) {
+    detailInfo.zoning = zoningMatch[1].trim();
+  }
+
+  console.log(`[ATHOME坪単価] 詳細情報取得:`, detailInfo);
+  return detailInfo;
+}
+
+/**
+ * ホームズ詳細ページから情報を抽出
+ * @param {Document} doc - パースされたHTMLドキュメント
+ * @param {Object} detailInfo - 情報格納オブジェクト
+ * @returns {Object} - 抽出された情報
+ */
+function extractHomesDetailInfo(doc, detailInfo) {
+  // 物件名を取得（h1タグから）
+  const h1Elements = doc.querySelectorAll('h1');
+  for (const h1 of h1Elements) {
+    const text = h1.textContent.trim();
+    if (text && text.length > 0 && text.length < 100) {
+      detailInfo.nameDetail = text;
+      break;
+    }
+  }
+
+  const bodyText = doc.body.textContent;
+
+  // data-component属性から情報を取得
+  const floorEl = doc.querySelector('[data-component="floor"]');
+  if (floorEl) detailInfo.floor = floorEl.textContent.trim();
+
+  const directionEl = doc.querySelector('[data-component="direction"]');
+  if (directionEl) detailInfo.direction = directionEl.textContent.trim();
+
+  const buildingFloorsEl = doc.querySelector('[data-component="buildingFloors"]');
+  if (buildingFloorsEl) detailInfo.buildingFloors = buildingFloorsEl.textContent.trim();
+
+  // テキストから情報を抽出
+  const managementMatch = bodyText.match(/管理費\s*([0-9,]+円)/);
+  if (managementMatch) {
+    detailInfo.managementFee = managementMatch[1];
+  }
+
+  const repairMatch = bodyText.match(/修繕積立金\s*([0-9,]+円)/);
+  if (repairMatch) {
+    detailInfo.repairFund = repairMatch[1];
+  }
+
+  const layoutMatch = bodyText.match(/([0-9]+[SLDK]+)/);
+  if (layoutMatch) {
+    detailInfo.layout = layoutMatch[1];
+  }
+
+  const balconyMatch = bodyText.match(/バルコニー[^\d]*([0-9.]+㎡)/);
+  if (balconyMatch) {
+    detailInfo.balconyArea = balconyMatch[1];
+  }
+
+  const totalUnitsMatch = bodyText.match(/総戸数\s*([0-9,]+戸)/);
+  if (totalUnitsMatch) {
+    detailInfo.totalUnits = totalUnitsMatch[1];
+  }
+
+  const structureMatch = bodyText.match(/(RC|SRC|鉄骨鉄筋コンクリート|鉄筋コンクリート|鉄骨造|木造)/);
+  if (structureMatch) {
+    detailInfo.structure = structureMatch[1];
+  }
+
+  const parkingMatch = bodyText.match(/駐車場\s*([^\n]+)/);
+  if (parkingMatch) {
+    detailInfo.parking = parkingMatch[1].trim();
+  }
+
+  const builtDateMatch = bodyText.match(/(\d{4}年\d+月)/);
+  if (builtDateMatch) {
+    detailInfo.builtDate = builtDateMatch[1];
+  }
+
+  console.log(`[HOMES坪単価] 詳細情報取得:`, detailInfo);
+  return detailInfo;
+}
+
+// ============================================================
+// CSVエクスポート機能
+// ============================================================
+
+/**
  * 現在表示されている物件データを収集（非同期版）
- * @param {Function} progressCallback - 進捗通知コールバック
+ * @param {Function} progressCallback - 進捗通知コールバック (current, total)
  * @returns {Array} - 物件データの配列
  */
 async function collectPropertyData(progressCallback = null) {
-  console.log(`[${SITE_TYPE}坪単価] 物件データ収集開始`);
+  log('物件データ収集開始');
   const properties = [];
 
-  // 物件カード（一覧ページ）をサイトごとに検索
-  let propertyCards = [];
-  if (SITE_TYPE === 'REHOUSE') {
-    propertyCards = document.querySelectorAll('.property-index-card');
-  } else if (SITE_TYPE === 'ATHOME') {
-    propertyCards = document.querySelectorAll('.card-box-inner__detail');
-  } else if (SITE_TYPE === 'HOMES') {
-    const allTables = document.querySelectorAll('.bukkenSpec table');
-    const standardCards = Array.from(allTables).filter(table =>
-      table.querySelector('td.price') && table.querySelector('td.space')
-    );
-    const groupedCards = document.querySelectorAll('.unitSummary tbody tr');
-    propertyCards = [...standardCards, ...groupedCards];
-  } else {
-    propertyCards = document.querySelectorAll('.cassetteitem, .dottable--cassette, [class*="cassette"]');
-  }
+  const propertyCards = getPropertyCards();
 
-  console.log(`[${SITE_TYPE}坪単価] 収集対象物件数:`, propertyCards.length);
+  log('収集対象物件数:', propertyCards.length);
 
   // 各物件からデータを抽出
   propertyCards.forEach((card, index) => {
@@ -1119,24 +1450,46 @@ async function collectPropertyData(progressCallback = null) {
         if (titleElement) {
           propertyData.name = titleElement.textContent.trim();
         }
-        const addressElements = card.querySelectorAll('.paragraph-body');
-        for (const el of addressElements) {
-          if (el.textContent.includes('駅') || el.textContent.includes('徒歩')) {
-            continue; // 駅情報はスキップ
-          }
-          if (!el.textContent.includes('㎡') && !el.textContent.includes('m2')) {
-            propertyData.address = el.textContent.trim();
-            break;
-          }
-        }
+
+        // 住所取得: 一覧ページでは詳細ページから取得する方が確実なので、ここではスキップ
+        propertyData.address = '';
       } else if (SITE_TYPE === 'ATHOME') {
-        const titleElement = card.querySelector('.property-title, [class*="title"]');
+        // アットホームの物件名は親要素(.card-box-inner)内にある
+        const parentCard = card.closest('.card-box-inner');
+
+        // 物件名: .title-wrap__title-text から取得
+        const titleElement = parentCard ? parentCard.querySelector('.title-wrap__title-text') : null;
         if (titleElement) {
           propertyData.name = titleElement.textContent.trim();
+        } else {
+          // フォールバック: 他のセレクタを試す
+          const titleSelectors = [
+            'h3 a',
+            'h2 a',
+            '.property-title',
+            '.bukken-name',
+            '[class*="title"] a'
+          ];
+          for (const selector of titleSelectors) {
+            const fallbackTitle = (parentCard || card).querySelector(selector);
+            if (fallbackTitle && fallbackTitle.textContent.trim()) {
+              propertyData.name = fallbackTitle.textContent.trim();
+              break;
+            }
+          }
         }
-        const addressElement = card.querySelector('.property-address');
-        if (addressElement) {
-          propertyData.address = addressElement.textContent.trim();
+
+        // 住所: 親要素のテキストから「所在地」の後を取得
+        const allText = (parentCard || card).textContent;
+        const addressWithLabel = allText.match(/所在地\s*([^\n]+)/);
+        if (addressWithLabel) {
+          propertyData.address = addressWithLabel[1].trim();
+        } else {
+          // フォールバック: 都道府県名から始まる住所パターン
+          const addressMatch = allText.match(/(東京都|神奈川県|千葉県|埼玉県|大阪府|京都府|兵庫県|愛知県|福岡県|北海道)[^\n]{5,80}?(区|市|町|村)/);
+          if (addressMatch) {
+            propertyData.address = addressMatch[0].trim();
+          }
         }
       } else if (SITE_TYPE === 'HOMES') {
         const titleElement = card.querySelector('.bukkenName, [class*="name"]');
@@ -1181,6 +1534,16 @@ async function collectPropertyData(progressCallback = null) {
             }
           }
         }
+      } else if (SITE_TYPE === 'ATHOME') {
+        // アットホーム: 親要素から.select-linkを取得
+        const parentCard = card.closest('.card-box-inner');
+        const linkElement = (parentCard || card).querySelector('.select-link, a[href*="/mansion/"]');
+        if (linkElement) {
+          const href = linkElement.getAttribute('href');
+          if (href && !href.includes('javascript:')) {
+            propertyData.url = href.startsWith('http') ? href : new URL(href, window.location.origin).href;
+          }
+        }
       } else {
         // 他のサイト
         const linkElement = card.querySelector('a[href]');
@@ -1194,7 +1557,6 @@ async function collectPropertyData(progressCallback = null) {
       }
 
       // 築年数を抽出（可能な場合）
-      const builtYearPatterns = ['築年月', '築年数', '築'];
       const allText = card.textContent;
       const builtMatch = allText.match(/築(\d+)年/);
       if (builtMatch) {
@@ -1214,17 +1576,17 @@ async function collectPropertyData(progressCallback = null) {
       }
 
       properties.push(propertyData);
-      console.log(`[${SITE_TYPE}坪単価] 物件${index + 1}データ収集:`, propertyData);
+      log(`物件${index + 1}データ収集:`, propertyData);
     } catch (error) {
-      console.error(`[${SITE_TYPE}坪単価] 物件${index + 1}データ収集エラー:`, error);
+      logError(`物件${index + 1}データ収集エラー:`, error);
     }
   });
 
-  console.log(`[${SITE_TYPE}坪単価] 基本情報収集完了。物件数:`, properties.length);
+  log('基本情報収集完了。物件数:', properties.length);
 
-  // 詳細ページから追加情報を取得（SUUMO専用）
-  if (SITE_TYPE === 'SUUMO' && properties.length > 0) {
-    console.log(`[${SITE_TYPE}坪単価] 詳細ページから追加情報を取得開始...`);
+  // 詳細ページから追加情報を取得（全サイト対応）
+  if (properties.length > 0) {
+    log('詳細ページから追加情報を取得開始...');
 
     for (let i = 0; i < properties.length; i++) {
       const property = properties[i];
@@ -1235,10 +1597,13 @@ async function collectPropertyData(progressCallback = null) {
       }
 
       if (property.url) {
-        console.log(`[${SITE_TYPE}坪単価] ${i + 1}/${properties.length} 詳細ページ取得: ${property.url}`);
+        log(`${i + 1}/${properties.length} 詳細ページ取得: ${property.url}`);
 
-        // 詳細情報を取得
-        const detailInfo = await fetchDetailPageInfo(property.url);
+        // 詳細情報を取得（サイトタイプを渡す）
+        const detailInfo = await fetchDetailPageInfo(property.url, SITE_TYPE);
+
+        // 一覧ページで既に取得した情報を保持
+        const existingAddress = property.address;
 
         // プロパティにマージ
         Object.assign(property, detailInfo);
@@ -1248,23 +1613,28 @@ async function collectPropertyData(progressCallback = null) {
           property.name = detailInfo.nameDetail;
         }
 
+        // 住所: 一覧ページで取得できていて詳細ページで取得できなかった場合は一覧ページの住所を維持
+        if (existingAddress && !detailInfo.address) {
+          property.address = existingAddress;
+        }
+
         // サーバー負荷軽減: 各リクエスト間に2秒待機
         if (i < properties.length - 1) {
           await sleep(2000);
 
           // 5件ごとに長めの待機（3秒）
           if ((i + 1) % 5 === 0) {
-            console.log(`[${SITE_TYPE}坪単価] 5件処理完了。追加で1秒待機...`);
+            log('5件処理完了。追加で1秒待機...');
             await sleep(1000);
           }
         }
       }
     }
 
-    console.log(`[${SITE_TYPE}坪単価] 詳細情報取得完了`);
+    log('詳細情報取得完了');
   }
 
-  console.log(`[${SITE_TYPE}坪単価] 全データ収集完了。物件数:`, properties.length);
+  log('全データ収集完了。物件数:', properties.length);
   return properties;
 }
 
@@ -1376,7 +1746,7 @@ function downloadCSV(csvContent) {
   // メモリ解放
   URL.revokeObjectURL(link.href);
 
-  console.log(`[${SITE_TYPE}坪単価] CSVダウンロード完了:`, filename);
+  log('CSVダウンロード完了:', filename);
 }
 
 /**
@@ -1393,8 +1763,8 @@ function createExportButton() {
   const button = document.createElement('button');
   button.id = 'fudosan-csv-export-button';
   button.className = 'fudosan-csv-export-button';
-  button.innerHTML = '📊 CSVエクスポート (β版・SUUMO専用)';
-  button.title = '【ベータ版機能】現在のページの物件データをCSV形式でダウンロード\n・SUUMO専用（他サイトは今後対応予定）\n・無料提供中ですが、将来的に有料化する可能性があります';
+  button.innerHTML = '📊 CSVエクスポート (β版)';
+  button.title = '【ベータ版機能】現在のページの物件データをCSV形式でダウンロード\n・無料提供中ですが、将来的に有料化する可能性があります';
 
   // クリックイベント（非同期対応）
   button.addEventListener('click', async () => {
@@ -1404,7 +1774,6 @@ function createExportButton() {
       const confirmed = confirm(
         '📊 CSVエクスポート（ベータ版）\n\n' +
         '現在無料で提供中ですが、以下の点にご留意ください：\n\n' +
-        '✓ SUUMO専用機能です\n' +
         '✓ ベータ版のため、仕様が変更される可能性があります\n' +
         '✓ 将来的に有料化する可能性があります\n\n' +
         'ご了承いただける場合は「OK」を押してください。'
@@ -1417,39 +1786,63 @@ function createExportButton() {
       localStorage.setItem('csvBetaNoticeShown', 'true');
     }
 
-    console.log(`[${SITE_TYPE}坪単価] CSVエクスポート開始`);
+    log('CSVエクスポート開始');
     button.disabled = true;
-    button.innerHTML = '⏳ 収集中...';
+    button.innerHTML = '⏳ エクスポート中...';
+
+    // プログレスバーを作成・挿入
+    const progressContainer = document.createElement('div');
+    progressContainer.className = 'fudosan-export-progress';
+    progressContainer.innerHTML = `
+      <div class="fudosan-export-progress-track">
+        <div class="fudosan-export-progress-bar" style="width: 0%"></div>
+      </div>
+      <div class="fudosan-export-progress-text">準備中...</div>
+    `;
+    button.parentElement.insertBefore(progressContainer, button.nextSibling);
 
     try {
       // 進捗表示コールバック
       const progressCallback = (current, total) => {
-        button.innerHTML = `⏳ 詳細取得中 ${current}/${total}`;
+        const percent = Math.round((current / total) * 100);
+        const bar = progressContainer.querySelector('.fudosan-export-progress-bar');
+        const text = progressContainer.querySelector('.fudosan-export-progress-text');
+        if (bar) bar.style.width = `${percent}%`;
+        if (text) text.textContent = `詳細取得中 ${current}/${total}`;
       };
 
       const properties = await collectPropertyData(progressCallback);
       if (properties.length === 0) {
         alert('エクスポート可能な物件データが見つかりませんでした。');
-        button.innerHTML = '📊 CSVエクスポート (β版・SUUMO専用)';
+        button.innerHTML = '📊 CSVエクスポート (β版)';
         button.disabled = false;
+        progressContainer.remove();
         return;
       }
 
-      button.innerHTML = '📝 CSV生成中...';
+      // CSV生成中の表示
+      const bar = progressContainer.querySelector('.fudosan-export-progress-bar');
+      const text = progressContainer.querySelector('.fudosan-export-progress-text');
+      if (bar) bar.style.width = '100%';
+      if (text) text.textContent = 'CSV生成中...';
+
       const csvContent = generateCSV(properties);
       downloadCSV(csvContent);
 
+      // 完了表示
+      progressContainer.remove();
       button.innerHTML = '✅ 完了！';
       setTimeout(() => {
-        button.innerHTML = '📊 CSVエクスポート (β版・SUUMO専用)';
+        button.innerHTML = '📊 CSVエクスポート (β版)';
         button.disabled = false;
       }, 2000);
     } catch (error) {
-      console.error(`[${SITE_TYPE}坪単価] CSVエクスポートエラー:`, error);
+      logError('CSVエクスポートエラー:', error);
       alert('CSVエクスポート中にエラーが発生しました。コンソールを確認してください。');
+      progressContainer.remove();
       button.innerHTML = '❌ エラー';
       setTimeout(() => {
-        button.innerHTML = '📊 CSVエクスポート (β版・SUUMO専用)';
+        button.innerHTML = '📊 CSVエクスポート (β版)';
         button.disabled = false;
       }, 2000);
     }
@@ -1457,15 +1850,19 @@ function createExportButton() {
 
   // ボタンをページに追加
   document.body.appendChild(button);
-  console.log(`[${SITE_TYPE}坪単価] エクスポートボタンを追加しました`);
+  log('エクスポートボタンを追加しました');
 }
+
+// ============================================================
+// 初期化
+// ============================================================
 
 /**
  * 初期化処理
  */
 function init() {
-  console.log(`[${SITE_TYPE}坪単価] 拡張機能が起動しました`);
-  console.log(`[${SITE_TYPE}坪単価] URL:`, window.location.href);
+  log('拡張機能が起動しました');
+  log('URL:', window.location.href);
 
   // ページ読み込み時に処理
   processAllProperties();
@@ -1476,29 +1873,14 @@ function init() {
   // エクスポートボタンを追加（一覧ページのみ）
   // エラーが起きても他の機能に影響しないようにtry-catchで囲む
   try {
-    // 詳細ページかどうかを判定
-    let propertyCards = [];
-    if (SITE_TYPE === 'REHOUSE') {
-      propertyCards = document.querySelectorAll('.property-index-card');
-    } else if (SITE_TYPE === 'ATHOME') {
-      propertyCards = document.querySelectorAll('.card-box-inner__detail');
-    } else if (SITE_TYPE === 'HOMES') {
-      const allTables = document.querySelectorAll('.bukkenSpec table');
-      const standardCards = Array.from(allTables).filter(table =>
-        table.querySelector('td.price') && table.querySelector('td.space')
-      );
-      const groupedCards = document.querySelectorAll('.unitSummary tbody tr');
-      propertyCards = [...standardCards, ...groupedCards];
-    } else {
-      propertyCards = document.querySelectorAll('.cassetteitem, .dottable--cassette, [class*="cassette"]');
-    }
+    const propertyCards = getPropertyCards();
 
     if (propertyCards.length > 0) {
-      console.log(`[${SITE_TYPE}坪単価] 一覧ページと判定、エクスポートボタンを追加`);
+      log('一覧ページと判定、エクスポートボタンを追加');
       createExportButton();
     }
   } catch (error) {
-    console.error(`[${SITE_TYPE}坪単価] エクスポートボタン追加エラー:`, error);
+    logError('エクスポートボタン追加エラー:', error);
   }
 }
 
