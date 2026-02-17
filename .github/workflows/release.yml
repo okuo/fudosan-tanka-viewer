@@ -1,0 +1,46 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Verify tag matches manifest.json version
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          manifest_version=$(python3 -c "import json; print(json.load(open('manifest.json'))['version'])")
+          if [ "$tag_version" != "$manifest_version" ]; then
+            echo "::error::Tag version ($tag_version) does not match manifest.json version ($manifest_version)"
+            exit 1
+          fi
+          echo "Version verified: $tag_version"
+
+      - name: Build zip
+        run: bash build.sh
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: fudosan-tanka-viewer.zip
+          generate_release_notes: true
+
+      - name: Upload to Chrome Web Store
+        if: env.EXTENSION_ID != ''
+        uses: mnao305/chrome-extension-upload@v5.0.0
+        with:
+          file-path: fudosan-tanka-viewer.zip
+          extension-id: ${{ secrets.EXTENSION_ID }}
+          client-id: ${{ secrets.CWS_CLIENT_ID }}
+          client-secret: ${{ secrets.CWS_CLIENT_SECRET }}
+          refresh-token: ${{ secrets.CWS_REFRESH_TOKEN }}
+          publish: false
+        env:
+          EXTENSION_ID: ${{ secrets.EXTENSION_ID }}

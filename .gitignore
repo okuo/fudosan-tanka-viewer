@@ -12,3 +12,7 @@ Thumbs.db
 
 # Node modules (if needed in future)
 node_modules/
+
+# Build artifacts
+fudosan-tanka-viewer.zip
+dist/
