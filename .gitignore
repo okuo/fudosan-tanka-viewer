@@ -16,3 +16,15 @@ node_modules/
 # Build artifacts
 fudosan-tanka-viewer.zip
 dist/
+
+# Store assets
+画像/
+
+# Test/sample data
+sample_data/
+test_address_extraction.js
+
+# Store guides (CI/CD で自動化済み)
+BUILD_GUIDE.md
+SCREENSHOT_GUIDE.md
+STORE_DESCRIPTION.md
