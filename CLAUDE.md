@@ -43,7 +43,14 @@ fudosan-tanka-viewer/
 ├── content.js             # メインロジック（DOM監視、計算、表示）
 ├── styles.css             # 坪単価表示のスタイル
 ├── icons/                 # 拡張機能アイコン（16px, 48px, 128px）
-└── CLAUDE.md             # このファイル
+├── .github/workflows/     # CI/CD
+│   ├── ci.yml             # PR/Push時の検証＋ビルド
+│   └── release.yml        # タグPushでリリース＋CWSアップロード
+├── build.sh               # CI用ビルドスクリプト（Ubuntu）
+├── build.ps1              # ローカル用ビルドスクリプト（Windows）
+├── PRIVACY_PRACTICES.txt  # Chrome Web Store プライバシー情報
+├── STORE_LISTING_TEXT.txt  # Chrome Web Store 掲載テキスト
+└── CLAUDE.md              # このファイル
 ```
 
 ## 開発・テスト方法
@@ -292,6 +299,42 @@ if (SITE_TYPE === 'HOMES') {
     // ...既存のセレクタ
   ];
 }
+```
+
+## CI/CD
+
+### GitHub Actions ワークフロー
+
+**CI (`ci.yml`)** — `push` (master) / `pull_request` (master) で自動実行:
+- manifest.json の JSONバリデーション
+- バージョンフォーマット確認（X.Y.Z）
+- 必須ファイル存在チェック（content.js, styles.css, icons/）
+- zipビルド＋アーティファクトアップロード
+
+**Release (`release.yml`)** — `v*.*.*` タグPushで自動実行:
+- タグバージョンと manifest.json バージョンの一致検証
+- zipビルド
+- GitHub Release 作成（zip添付、リリースノート自動生成）
+- Chrome Web Store アップロード（`publish: false`、審査提出は手動）
+
+### GitHub Secrets
+
+| Secret | 用途 |
+|--------|------|
+| `EXTENSION_ID` | Chrome Web Store の拡張機能ID |
+| `CWS_CLIENT_ID` | Google OAuth Client ID |
+| `CWS_CLIENT_SECRET` | Google OAuth Client Secret |
+| `CWS_REFRESH_TOKEN` | Google OAuth Refresh Token |
+
+### リリース手順
+
+```
+1. コード修正
+2. manifest.json のバージョンを上げる（例: 1.4.1 → 1.5.0）
+3. コミット & プッシュ（CI が検証＋ビルド）
+4. git tag v1.5.0 && git push origin v1.5.0
+5. → 自動で GitHub Release 作成＋Chrome Web Store アップロード
+6. Chrome Web Store Developer Dashboard で審査提出（手動）
 ```
 
 ## 今後の展開
