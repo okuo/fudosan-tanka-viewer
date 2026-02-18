@@ -10,6 +10,9 @@ const processedElements = new Set();
 // 計算結果をキャッシュするためのMap（価格_面積 -> {tsuboPrice, heiheiPrice}）
 const calculationCache = new Map();
 
+// お気に入りURLのSetをキャッシュ（ページ内での高速参照用）
+let favoriteUrls = new Set();
+
 // 現在のサイトを判定
 const SITE_TYPE = window.location.hostname.includes('rehouse.co.jp')
   ? 'REHOUSE'
@@ -109,11 +112,513 @@ function calculateHeiheiPrice(price, area) {
 }
 
 /**
+ * 元利均等返済の月々返済額を計算
+ * @param {number} principal - 借入額（円）
+ * @param {number} annualRate - 年利（例: 0.005 = 0.5%）
+ * @param {number} years - 返済年数
+ * @returns {number} - 月々返済額（円）、小数点以下四捨五入
+ */
+function calculateMonthlyLoanPayment(principal, annualRate, years) {
+  if (principal <= 0 || years <= 0) return 0;
+  if (annualRate <= 0) {
+    // 金利0%の場合は単純分割
+    return Math.round(principal / (years * 12));
+  }
+  const monthlyRate = annualRate / 12;
+  const totalMonths = years * 12;
+  const factor = Math.pow(1 + monthlyRate, totalMonths);
+  return Math.round(principal * monthlyRate * factor / (factor - 1));
+}
+
+/**
+ * テキストから金額（円）を抽出する
+ * 例: "12,000円/月" -> 12000, "15,000円（税込）" -> 15000
+ * @param {string} text - 金額を含むテキスト
+ * @returns {number|null} - 抽出された金額（円）、失敗時はnull
+ */
+function extractYenAmount(text) {
+  if (!text) return null;
+  const match = text.replace(/,/g, '').match(/(\d+(?:\.\d+)?)\s*円/);
+  if (match) {
+    const amount = parseFloat(match[1]);
+    return amount > 0 ? amount : null;
+  }
+  return null;
+}
+
+/**
  * 指定ミリ秒待機する
  * @param {number} ms - 待機時間（ミリ秒）
  */
 function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+/**
+ * 修繕積立金の平米単価を計算し、国交省ガイドラインと比較
+ * @param {string} repairFundText - 修繕積立金テキスト（例: "12,000円/月"）
+ * @param {number} area - 専有面積（㎡）
+ * @param {string} buildingFloorsText - 建物階数テキスト（例: "16階建"）
+ * @param {string} totalUnitsText - 総戸数テキスト（敷地面積の代替指標）
+ * @returns {{ perSqm: number, guideline: number, isAdequate: boolean, label: string }|null}
+ */
+function calculateRepairFundPerSqm(repairFundText, area, buildingFloorsText, totalUnitsText) {
+  if (!repairFundText || !area || area <= 0) return null;
+
+  // 修繕積立金から数値（円）を抽出
+  const fundMatch = repairFundText.replace(/,/g, '').match(/(\d+(?:\.\d+)?)\s*円/);
+  if (!fundMatch) return null;
+
+  const fundYen = parseFloat(fundMatch[1]);
+  if (fundYen <= 0) return null;
+
+  const perSqm = Math.round(fundYen / area);
+
+  // 建物階数を取得
+  let buildingFloors = 0;
+  if (buildingFloorsText) {
+    const floorsMatch = buildingFloorsText.replace(/地上/g, '').match(/(\d+)階/);
+    if (floorsMatch) {
+      buildingFloors = parseInt(floorsMatch[1], 10);
+    }
+  }
+
+  // 国交省ガイドライン目安（円/㎡/月）
+  // 20階以上（タワマン）: 338円
+  // 15階未満・5,000㎡未満: 335円
+  // 15階未満・5,000〜10,000㎡: 252円
+  // 15階未満・10,000㎡以上: 271円
+  // 不明の場合: 252円（最も一般的）
+  let guideline = 252; // デフォルト
+  let guidelineLabel = '';
+
+  if (buildingFloors >= 20) {
+    guideline = 338;
+    guidelineLabel = '20階以上';
+  } else if (buildingFloors > 0 && buildingFloors < 15) {
+    // 総戸数から敷地面積を推定（粗い推定だが参考値として）
+    // 総戸数が不明の場合はデフォルト252円
+    guidelineLabel = '15階未満';
+    guideline = 252; // デフォルト（5,000〜10,000㎡が最も一般的）
+  } else {
+    guidelineLabel = '一般';
+  }
+
+  // 80%未満なら目安以下
+  const isAdequate = perSqm >= guideline * 0.8;
+  const label = isAdequate ? '適正水準' : '目安以下（将来値上げリスク）';
+
+  return { perSqm, guideline, isAdequate, label };
+}
+
+/**
+ * 修繕積立金の平米単価表示用DOM要素を生成
+ * @param {{ perSqm: number, guideline: number, isAdequate: boolean, label: string }} result
+ * @returns {HTMLDivElement}
+ */
+function createRepairFundElement(result) {
+  const div = document.createElement('div');
+  div.className = 'fudosan-unit-price fudosan-repair-fund';
+  const statusClass = result.isAdequate ? 'repair-fund-adequate' : 'repair-fund-warning';
+  const statusIcon = result.isAdequate ? '\u2713' : '\u26A0';
+  div.innerHTML = `
+    <span class="unit-price-label">修繕積立金単価:</span>
+    <span class="unit-price-value repair-fund-value">${result.perSqm.toLocaleString()}円/㎡/月</span>
+    <span class="unit-price-separator">|</span>
+    <span class="unit-price-label">目安:</span>
+    <span class="unit-price-value">${result.guideline}円/㎡</span>
+    <span class="unit-price-separator">|</span>
+    <span class="${statusClass}">${statusIcon} ${result.label}</span>
+  `;
+  return div;
+}
+
+/**
+ * 月額コスト表示用DOM要素を生成
+ * @param {number} loanMonthly - ローン月額（円）
+ * @param {number|null} managementFee - 管理費（円/月）、取得不可の場合null
+ * @param {number|null} repairFund - 修繕積立金（円/月）、取得不可の場合null
+ * @param {number} annualRate - 年利（例: 0.005）
+ * @param {number} years - 返済年数
+ * @returns {HTMLDivElement}
+ */
+function createMonthlyCostElement(loanMonthly, managementFee, repairFund, annualRate, years) {
+  const totalMonthly = loanMonthly + (managementFee || 0) + (repairFund || 0);
+
+  const div = document.createElement('div');
+  div.className = 'fudosan-unit-price fudosan-monthly-cost';
+
+  // 内訳の構築
+  const parts = [`ローン ${loanMonthly.toLocaleString()}円`];
+  if (managementFee !== null) {
+    parts.push(`管理費 ${managementFee.toLocaleString()}円`);
+  }
+  if (repairFund !== null) {
+    parts.push(`修繕 ${repairFund.toLocaleString()}円`);
+  }
+
+  // 注記（取得できなかった項目がある場合）
+  const missingParts = [];
+  if (managementFee === null) missingParts.push('管理費');
+  if (repairFund === null) missingParts.push('修繕積立金');
+  const missingNote = missingParts.length > 0
+    ? `<span class="monthly-cost-note">※${missingParts.join('・')}は取得できませんでした</span>`
+    : '';
+
+  const ratePercent = (annualRate * 100).toFixed(1);
+
+  div.innerHTML = `
+    <div class="monthly-cost-header">
+      <span class="monthly-cost-icon">\uD83D\uDCB0</span>
+      <span class="monthly-cost-label">月額コスト概算:</span>
+      <span class="monthly-cost-total">約${totalMonthly.toLocaleString()}円</span>
+    </div>
+    <div class="monthly-cost-breakdown">
+      （${parts.join(' + ')}）
+    </div>
+    <div class="monthly-cost-conditions">
+      ※金利${ratePercent}% / ${years}年返済
+      ${missingNote}
+    </div>
+  `;
+  return div;
+}
+
+/**
+ * 詳細ページで管理費・修繕積立金を取得する
+ * @returns {{ managementFee: number|null, repairFund: number|null }}
+ */
+function extractManagementAndRepairFees() {
+  let managementFeeText = '';
+  let repairFundText = '';
+
+  if (SITE_TYPE === 'SUUMO') {
+    const tables = document.querySelectorAll('table');
+    for (const table of tables) {
+      const rows = table.querySelectorAll('tr');
+      for (const row of rows) {
+        const th = row.querySelector('th');
+        const td = row.querySelector('td');
+        if (!th || !td) continue;
+        const thText = th.textContent.trim();
+        if (thText.includes('管理費') && !thText.includes('修繕')) {
+          managementFeeText = td.textContent.trim();
+        }
+        if (thText.includes('修繕積立金') && !thText.includes('基金')) {
+          repairFundText = td.textContent.trim();
+        }
+      }
+    }
+  } else if (SITE_TYPE === 'REHOUSE') {
+    const bodyText = document.body.textContent;
+    const mgmtMatch = bodyText.match(/管理費[^\d]*?([0-9,]+円)/);
+    if (mgmtMatch) managementFeeText = mgmtMatch[1];
+    const repairMatch = bodyText.match(/修繕積立金[等\s]*[^\d]*?([0-9,]+円)/);
+    if (repairMatch) repairFundText = repairMatch[1];
+  } else if (SITE_TYPE === 'ATHOME') {
+    const tables = document.querySelectorAll('table');
+    for (const table of tables) {
+      const rows = table.querySelectorAll('tr');
+      for (const row of rows) {
+        const th = row.querySelector('th');
+        const td = row.querySelector('td');
+        if (!th || !td) continue;
+        const thText = th.textContent.trim();
+        if (thText.includes('管理費')) {
+          managementFeeText = td.textContent.trim();
+        }
+        if (thText.includes('修繕積立金')) {
+          repairFundText = td.textContent.trim();
+        }
+      }
+    }
+  } else if (SITE_TYPE === 'HOMES') {
+    const bodyText = document.body.textContent;
+    const mgmtMatch = bodyText.match(/管理費\s*([0-9,]+円)/);
+    if (mgmtMatch) managementFeeText = mgmtMatch[1];
+    const repairMatch = bodyText.match(/修繕積立金\s*([0-9,]+円)/);
+    if (repairMatch) repairFundText = repairMatch[1];
+  }
+
+  const managementFee = extractYenAmount(managementFeeText);
+  const repairFund = extractYenAmount(repairFundText);
+
+  log('管理費テキスト:', managementFeeText, '->', managementFee, '円');
+  log('修繕積立金テキスト:', repairFundText, '->', repairFund, '円');
+
+  return { managementFee, repairFund };
+}
+
+/**
+ * 詳細ページで月額コスト概算を計算・表示する
+ * @param {number} priceMan - 物件価格（万円）
+ */
+function displayMonthlyCost(priceMan) {
+  const annualRate = 0.005; // 0.5%
+  const years = 35;
+  const principal = priceMan * 10000; // 万円 -> 円
+
+  const loanMonthly = calculateMonthlyLoanPayment(principal, annualRate, years);
+  if (loanMonthly <= 0) {
+    log('ローン月額計算不可');
+    return;
+  }
+
+  const { managementFee, repairFund } = extractManagementAndRepairFees();
+
+  log('月額コスト計算 - ローン:', loanMonthly, '円, 管理費:', managementFee, '円, 修繕:', repairFund, '円');
+
+  // 既存の月額コスト表示を削除
+  const existingCost = document.querySelectorAll('.fudosan-monthly-cost');
+  existingCost.forEach(el => el.remove());
+
+  const costDiv = createMonthlyCostElement(loanMonthly, managementFee, repairFund, annualRate, years);
+
+  // 挿入位置: 修繕積立金表示の下、なければ坪単価表示の下
+  if (SITE_TYPE === 'SUUMO') {
+    const repairFundEl = document.querySelector('.mt7.b ~ .fudosan-repair-fund');
+    const unitPriceEl = document.querySelector('.mt7.b + .fudosan-unit-price:not(.fudosan-repair-fund)');
+    const insertAfter = repairFundEl || unitPriceEl;
+    if (insertAfter && insertAfter.parentElement) {
+      if (insertAfter.nextSibling) {
+        insertAfter.parentElement.insertBefore(costDiv, insertAfter.nextSibling);
+      } else {
+        insertAfter.parentElement.appendChild(costDiv);
+      }
+      log('月額コストを上部に挿入');
+    }
+  } else {
+    // REHOUSE, ATHOME, HOMES: 修繕積立金表示の下、なければ坪単価表示の下
+    const repairFundEl = document.querySelector('.fudosan-repair-fund');
+    const unitPriceEl = document.querySelector('.fudosan-unit-price:not(.fudosan-repair-fund):not(.fudosan-monthly-cost)');
+    const insertAfter = repairFundEl || unitPriceEl;
+    if (insertAfter && insertAfter.parentElement) {
+      if (insertAfter.nextSibling) {
+        insertAfter.parentElement.insertBefore(costDiv, insertAfter.nextSibling);
+      } else {
+        insertAfter.parentElement.appendChild(costDiv);
+      }
+      log('月額コストを坪単価表示の下に挿入');
+    }
+  }
+}
+
+// ============================================================
+// 住宅ローンシミュレーション
+// ============================================================
+
+/**
+ * 住宅ローンシミュレーションUIを作成・表示する
+ * @param {number} priceMan - 物件価格（万円）
+ */
+function displayLoanSimulation(priceMan) {
+  // 既存のシミュレーションUIがあれば削除
+  const existing = document.querySelector('.fudosan-loan-sim');
+  if (existing) existing.remove();
+
+  const priceYen = priceMan * 10000; // 万円 -> 円
+
+  // コンテナ
+  const container = document.createElement('div');
+  container.className = 'fudosan-unit-price fudosan-loan-sim';
+
+  // ヘッダー（折りたたみトグル）
+  const header = document.createElement('div');
+  header.className = 'loan-sim-header';
+  header.innerHTML = `
+    <span class="loan-sim-toggle">\u25B6</span>
+    <span class="loan-sim-icon">\uD83C\uDFE0</span>
+    <span class="loan-sim-title">住宅ローンシミュレーション</span>
+  `;
+  container.appendChild(header);
+
+  // 本体（折りたたみ対象）
+  const body = document.createElement('div');
+  body.className = 'loan-sim-body';
+
+  // --- 入力欄 ---
+  const inputsDiv = document.createElement('div');
+  inputsDiv.className = 'loan-sim-inputs';
+
+  // 頭金
+  const downPaymentRow = createSimInputRow('頭金', 'loan-sim-down', 0, 0, priceMan, 100, '万円');
+  inputsDiv.appendChild(downPaymentRow.row);
+
+  // 金利
+  const rateRow = createSimInputRow('金利', 'loan-sim-rate', 0.5, 0.0, 5.0, 0.1, '%');
+  inputsDiv.appendChild(rateRow.row);
+
+  // 返済期間
+  const yearsRow = createSimInputRow('返済期間', 'loan-sim-years', 35, 10, 50, 5, '年');
+  inputsDiv.appendChild(yearsRow.row);
+
+  body.appendChild(inputsDiv);
+
+  // --- 結果表示 ---
+  const resultDiv = document.createElement('div');
+  resultDiv.className = 'loan-sim-result';
+  body.appendChild(resultDiv);
+
+  container.appendChild(body);
+
+  // デフォルトは折りたたみ状態
+  let isCollapsed = true;
+  body.style.display = 'none';
+  header.querySelector('.loan-sim-toggle').textContent = '\u25B6';
+
+  // 折りたたみ動作
+  header.addEventListener('click', () => {
+    isCollapsed = !isCollapsed;
+    body.style.display = isCollapsed ? 'none' : '';
+    header.querySelector('.loan-sim-toggle').textContent = isCollapsed ? '\u25B6' : '\u25BC';
+  });
+
+  // 計算・表示更新関数
+  function updateSimulation() {
+    const downPayment = parseFloat(downPaymentRow.input.value) || 0;
+    const rate = parseFloat(rateRow.input.value) || 0;
+    const years = parseInt(yearsRow.input.value, 10) || 35;
+
+    const borrowing = Math.max(0, priceYen - downPayment * 10000);
+    const annualRate = rate / 100;
+    const monthly = calculateMonthlyLoanPayment(borrowing, annualRate, years);
+    const totalPayment = monthly * years * 12;
+    const totalInterest = totalPayment - borrowing;
+
+    resultDiv.innerHTML = `
+      <div class="loan-sim-result-row">
+        <span class="loan-sim-result-label">借入額</span>
+        <span class="loan-sim-result-value">${Math.round(borrowing / 10000).toLocaleString()}万円</span>
+      </div>
+      <div class="loan-sim-result-row loan-sim-result-highlight">
+        <span class="loan-sim-result-label">月々返済額</span>
+        <span class="loan-sim-result-value loan-sim-monthly">${monthly.toLocaleString()}円</span>
+      </div>
+      <div class="loan-sim-result-row">
+        <span class="loan-sim-result-label">総返済額</span>
+        <span class="loan-sim-result-value">${Math.round(totalPayment / 10000).toLocaleString()}万円</span>
+      </div>
+      <div class="loan-sim-result-row">
+        <span class="loan-sim-result-label">利息総額</span>
+        <span class="loan-sim-result-value">${Math.round(totalInterest / 10000).toLocaleString()}万円</span>
+      </div>
+    `;
+
+    // スライダーと数値入力の同期
+    downPaymentRow.syncDisplay();
+    rateRow.syncDisplay();
+    yearsRow.syncDisplay();
+  }
+
+  // イベントリスナー設定
+  [downPaymentRow, rateRow, yearsRow].forEach(({ input, slider }) => {
+    input.addEventListener('input', () => {
+      slider.value = input.value;
+      updateSimulation();
+    });
+    slider.addEventListener('input', () => {
+      input.value = slider.value;
+      updateSimulation();
+    });
+  });
+
+  // 初回計算
+  updateSimulation();
+
+  // 挿入位置: 月額コスト表示の下、なければ修繕積立金表示の下、なければ坪単価表示の下
+  if (SITE_TYPE === 'SUUMO') {
+    const monthlyCostEl = document.querySelector('.mt7.b ~ .fudosan-monthly-cost');
+    const repairFundEl = document.querySelector('.mt7.b ~ .fudosan-repair-fund');
+    const unitPriceEl = document.querySelector('.mt7.b + .fudosan-unit-price:not(.fudosan-repair-fund):not(.fudosan-monthly-cost)');
+    const insertAfter = monthlyCostEl || repairFundEl || unitPriceEl;
+    if (insertAfter && insertAfter.parentElement) {
+      if (insertAfter.nextSibling) {
+        insertAfter.parentElement.insertBefore(container, insertAfter.nextSibling);
+      } else {
+        insertAfter.parentElement.appendChild(container);
+      }
+      log('ローンシミュレーションを上部に挿入');
+    }
+  } else {
+    const monthlyCostEl = document.querySelector('.fudosan-monthly-cost');
+    const repairFundEl = document.querySelector('.fudosan-repair-fund');
+    const unitPriceEl = document.querySelector('.fudosan-unit-price:not(.fudosan-repair-fund):not(.fudosan-monthly-cost):not(.fudosan-loan-sim)');
+    const insertAfter = monthlyCostEl || repairFundEl || unitPriceEl;
+    if (insertAfter && insertAfter.parentElement) {
+      if (insertAfter.nextSibling) {
+        insertAfter.parentElement.insertBefore(container, insertAfter.nextSibling);
+      } else {
+        insertAfter.parentElement.appendChild(container);
+      }
+      log('ローンシミュレーションを挿入');
+    }
+  }
+}
+
+/**
+ * シミュレーション入力行（ラベル + スライダー + 数値入力）を作成
+ * @param {string} label - ラベル
+ * @param {string} id - 要素IDプレフィックス
+ * @param {number} defaultVal - デフォルト値
+ * @param {number} min - 最小値
+ * @param {number} max - 最大値
+ * @param {number} step - 刻み値
+ * @param {string} unit - 単位テキスト
+ * @returns {{ row: HTMLDivElement, input: HTMLInputElement, slider: HTMLInputElement, syncDisplay: Function }}
+ */
+function createSimInputRow(label, id, defaultVal, min, max, step, unit) {
+  const row = document.createElement('div');
+  row.className = 'loan-sim-input-row';
+
+  const labelEl = document.createElement('label');
+  labelEl.className = 'loan-sim-input-label';
+  labelEl.textContent = label;
+  labelEl.htmlFor = id + '-input';
+  row.appendChild(labelEl);
+
+  const controlsDiv = document.createElement('div');
+  controlsDiv.className = 'loan-sim-input-controls';
+
+  const slider = document.createElement('input');
+  slider.type = 'range';
+  slider.className = 'loan-sim-slider';
+  slider.id = id + '-slider';
+  slider.min = min;
+  slider.max = max;
+  slider.step = step;
+  slider.value = defaultVal;
+  controlsDiv.appendChild(slider);
+
+  const inputWrap = document.createElement('div');
+  inputWrap.className = 'loan-sim-input-wrap';
+
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.className = 'loan-sim-input';
+  input.id = id + '-input';
+  input.min = min;
+  input.max = max;
+  input.step = step;
+  input.value = defaultVal;
+  inputWrap.appendChild(input);
+
+  const unitEl = document.createElement('span');
+  unitEl.className = 'loan-sim-input-unit';
+  unitEl.textContent = unit;
+  inputWrap.appendChild(unitEl);
+
+  controlsDiv.appendChild(inputWrap);
+  row.appendChild(controlsDiv);
+
+  const syncDisplay = () => {
+    // クランプ
+    let val = parseFloat(input.value);
+    if (isNaN(val)) val = defaultVal;
+    if (val < min) val = min;
+    if (val > max) val = max;
+  };
+
+  return { row, input, slider, syncDisplay };
 }
 
 // ============================================================
@@ -229,6 +734,185 @@ function insertUnitPriceAfterElement(targetElement, unitPriceDiv) {
   } else {
     targetElement.parentElement.appendChild(unitPriceDiv);
   }
+}
+
+// ============================================================
+// お気に入り機能
+// ============================================================
+
+/**
+ * chrome.storageからお気に入りURLセットを読み込んでキャッシュ
+ * @returns {Promise<void>}
+ */
+function loadFavoriteUrls() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get({ favorites: [] }, (result) => {
+      favoriteUrls = new Set(result.favorites.map(f => f.url));
+      resolve();
+    });
+  });
+}
+
+/**
+ * お気に入りを追加
+ * @param {Object} data - { url, name, price, tsubotanka, site, area, addedAt }
+ * @returns {Promise<void>}
+ */
+function addFavorite(data) {
+  return new Promise((resolve) => {
+    chrome.storage.local.get({ favorites: [] }, (result) => {
+      const favorites = result.favorites;
+      if (!favorites.some(f => f.url === data.url)) {
+        favorites.push(data);
+        chrome.storage.local.set({ favorites }, () => {
+          favoriteUrls.add(data.url);
+          log('お気に入り追加:', data.url);
+          resolve();
+        });
+      } else {
+        resolve();
+      }
+    });
+  });
+}
+
+/**
+ * お気に入りを削除
+ * @param {string} url - 削除対象URL
+ * @returns {Promise<void>}
+ */
+function removeFavorite(url) {
+  return new Promise((resolve) => {
+    chrome.storage.local.get({ favorites: [] }, (result) => {
+      const favorites = result.favorites.filter(f => f.url !== url);
+      chrome.storage.local.set({ favorites }, () => {
+        favoriteUrls.delete(url);
+        log('お気に入り削除:', url);
+        resolve();
+      });
+    });
+  });
+}
+
+/**
+ * お気に入りボタンを生成して返す
+ * @param {Object} propertyInfo - { url, name, price, tsubotanka, site, area }
+ * @returns {HTMLButtonElement}
+ */
+function createFavoriteButton(propertyInfo) {
+  const btn = document.createElement('button');
+  btn.className = 'fudosan-favorite-btn';
+  const isFav = favoriteUrls.has(propertyInfo.url);
+  btn.textContent = isFav ? '\u2605' : '\u2606';
+  btn.title = isFav ? 'お気に入りから削除' : 'お気に入りに追加';
+  if (isFav) {
+    btn.classList.add('fudosan-favorite-btn--active');
+  }
+
+  btn.addEventListener('click', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (favoriteUrls.has(propertyInfo.url)) {
+      await removeFavorite(propertyInfo.url);
+      btn.textContent = '\u2606';
+      btn.title = 'お気に入りに追加';
+      btn.classList.remove('fudosan-favorite-btn--active');
+    } else {
+      await addFavorite({
+        url: propertyInfo.url,
+        name: propertyInfo.name || '',
+        price: propertyInfo.price || null,
+        tsubotanka: propertyInfo.tsubotanka || null,
+        site: SITE_TYPE,
+        area: propertyInfo.area || null,
+        addedAt: new Date().toISOString()
+      });
+      btn.textContent = '\u2605';
+      btn.title = 'お気に入りから削除';
+      btn.classList.add('fudosan-favorite-btn--active');
+    }
+  });
+
+  return btn;
+}
+
+/**
+ * 物件カードからURLを抽出する
+ * @param {Element} card - 物件カード要素
+ * @returns {string} - 物件URL
+ */
+function extractPropertyUrl(card) {
+  if (SITE_TYPE === 'SUUMO') {
+    const parentDiv = card.closest('.property_unit-body, .ui-media');
+    if (parentDiv) {
+      const links = parentDiv.querySelectorAll('a[href*="/ms/"], a[href*="/chuko/"]');
+      if (links.length > 0) {
+        const href = links[0].getAttribute('href');
+        if (href) return href.startsWith('http') ? href : new URL(href, window.location.origin).href;
+      }
+    }
+    const linkSelectors = ['.cassetteitem_content-title a', 'a[href*="/chuko/"]', 'a[href*="/ms/"]'];
+    for (const selector of linkSelectors) {
+      const linkEl = card.querySelector(selector);
+      if (linkEl) {
+        const href = linkEl.getAttribute('href');
+        if (href && !href.includes('#') && !href.includes('javascript:')) {
+          return href.startsWith('http') ? href : new URL(href, window.location.origin).href;
+        }
+      }
+    }
+  } else if (SITE_TYPE === 'ATHOME') {
+    const parentCard = card.closest('.card-box-inner');
+    const linkEl = (parentCard || card).querySelector('.select-link, a[href*="/mansion/"]');
+    if (linkEl) {
+      const href = linkEl.getAttribute('href');
+      if (href && !href.includes('javascript:')) {
+        return href.startsWith('http') ? href : new URL(href, window.location.origin).href;
+      }
+    }
+  } else {
+    const linkEl = card.querySelector('a[href]');
+    if (linkEl) {
+      const href = linkEl.getAttribute('href');
+      if (href) return href.startsWith('http') ? href : new URL(href, window.location.origin).href;
+    }
+  }
+  return '';
+}
+
+/**
+ * 物件カードから物件名を抽出する
+ * @param {Element} card - 物件カード要素
+ * @returns {string} - 物件名
+ */
+function extractPropertyName(card) {
+  if (SITE_TYPE === 'SUUMO') {
+    const dts = card.querySelectorAll('dt');
+    for (const dt of dts) {
+      if (dt.textContent.trim().includes('物件名')) {
+        const dd = dt.nextElementSibling;
+        if (dd && dd.tagName === 'DD') return dd.textContent.trim();
+      }
+    }
+    const titleEl = card.querySelector('.cassetteitem_content-title');
+    if (titleEl) return titleEl.textContent.trim();
+  } else if (SITE_TYPE === 'REHOUSE') {
+    const titleEl = card.querySelector('.property-card-title, [class*="title"]');
+    if (titleEl) return titleEl.textContent.trim();
+  } else if (SITE_TYPE === 'ATHOME') {
+    const parentCard = card.closest('.card-box-inner');
+    const titleEl = parentCard ? parentCard.querySelector('.title-wrap__title-text') : null;
+    if (titleEl) return titleEl.textContent.trim();
+    const selectors = ['h3 a', 'h2 a', '.property-title', '[class*="title"] a'];
+    for (const sel of selectors) {
+      const el = (parentCard || card).querySelector(sel);
+      if (el && el.textContent.trim()) return el.textContent.trim();
+    }
+  } else if (SITE_TYPE === 'HOMES') {
+    const titleEl = card.querySelector('.bukkenName, [class*="name"]');
+    if (titleEl) return titleEl.textContent.trim();
+  }
+  return '';
 }
 
 // ============================================================
@@ -462,10 +1146,12 @@ function processProperty(element) {
 
   // 単価表示要素を作成
   let unitPriceDiv;
+  let tsuboPrice = null;
   if (price && area && price > 0 && area > 0) {
-    const { tsuboPrice, heiheiPrice } = getOrCalculateUnitPrice(price, area);
-    log('計算結果 - 坪単価:', tsuboPrice, '万円/坪, 平米単価:', heiheiPrice, '万円/㎡');
-    unitPriceDiv = createUnitPriceElement(tsuboPrice, heiheiPrice, isInTable);
+    const result = getOrCalculateUnitPrice(price, area);
+    tsuboPrice = result.tsuboPrice;
+    log('計算結果 - 坪単価:', result.tsuboPrice, '万円/坪, 平米単価:', result.heiheiPrice, '万円/㎡');
+    unitPriceDiv = createUnitPriceElement(result.tsuboPrice, result.heiheiPrice, isInTable);
   } else {
     log('計算不可 - 価格または面積が不正');
     unitPriceDiv = createUnavailableElement(isInTable);
@@ -479,6 +1165,19 @@ function processProperty(element) {
   const existingInElement = priceElement.querySelector('.fudosan-unit-price');
   if (existingInElement) {
     existingInElement.remove();
+  }
+
+  // お気に入りボタンを単価表示に追加
+  const propertyUrl = extractPropertyUrl(element);
+  if (propertyUrl) {
+    const favBtn = createFavoriteButton({
+      url: propertyUrl,
+      name: extractPropertyName(element),
+      price: price,
+      tsubotanka: tsuboPrice,
+      area: area
+    });
+    unitPriceDiv.appendChild(favBtn);
   }
 
   // テーブル内の場合は価格要素（td）の中に追加
@@ -617,24 +1316,48 @@ function processDetailPage() {
     const { tsuboPrice, heiheiPrice } = getOrCalculateUnitPrice(detailPrice, detailArea);
     log('計算完了 - 坪単価:', tsuboPrice, '万円/坪, 平米単価:', heiheiPrice, '万円/㎡');
 
+    // 詳細ページのお気に入りボタン用情報
+    const detailUrl = window.location.href;
+    const detailName = document.querySelector('h1')?.textContent?.trim() || '';
+
     // 上部の価格表示の下に追加
     if (SITE_TYPE === 'SUUMO') {
       const topPriceElement = document.querySelector('.mt7.b');
       if (topPriceElement && topPriceElement.parentElement) {
         const unitPriceDiv = createUnitPriceElement(tsuboPrice, heiheiPrice, false);
+        const favBtn = createFavoriteButton({
+          url: detailUrl, name: detailName,
+          price: detailPrice, tsubotanka: tsuboPrice, area: detailArea
+        });
+        unitPriceDiv.appendChild(favBtn);
         insertUnitPriceAfterElement(topPriceElement, unitPriceDiv);
         log('上部に表示を挿入');
       }
     } else if (SITE_TYPE === 'REHOUSE' && priceElement) {
       const unitPriceDiv = createUnitPriceElement(tsuboPrice, heiheiPrice, false);
+      const favBtn = createFavoriteButton({
+        url: detailUrl, name: detailName,
+        price: detailPrice, tsubotanka: tsuboPrice, area: detailArea
+      });
+      unitPriceDiv.appendChild(favBtn);
       insertUnitPriceAfterElement(priceElement, unitPriceDiv);
       log('価格表示の下に表示を挿入');
     } else if (SITE_TYPE === 'HOMES' && priceElement) {
       const unitPriceDiv = createUnitPriceElement(tsuboPrice, heiheiPrice, false);
+      const favBtn = createFavoriteButton({
+        url: detailUrl, name: detailName,
+        price: detailPrice, tsubotanka: tsuboPrice, area: detailArea
+      });
+      unitPriceDiv.appendChild(favBtn);
       insertUnitPriceAfterElement(priceElement, unitPriceDiv);
       log('価格表示の下に表示を挿入');
     } else if (SITE_TYPE === 'ATHOME' && priceElement) {
       const unitPriceDiv = createUnitPriceElement(tsuboPrice, heiheiPrice, false);
+      const favBtn = createFavoriteButton({
+        url: detailUrl, name: detailName,
+        price: detailPrice, tsubotanka: tsuboPrice, area: detailArea
+      });
+      unitPriceDiv.appendChild(favBtn);
       insertUnitPriceAfterElement(priceElement, unitPriceDiv);
       log('価格表示の下に表示を挿入');
     }
@@ -662,7 +1385,153 @@ function processDetailPage() {
     log('詳細ページで価格・面積が取得できませんでした');
   }
 
+  // 修繕積立金の平米単価表示
+  if (detailArea && detailArea > 0) {
+    displayRepairFundPerSqm(detailArea);
+  }
+
+  // 月額コスト概算表示
+  if (detailPrice && detailPrice > 0) {
+    displayMonthlyCost(detailPrice);
+  }
+
+  // 住宅ローンシミュレーション
+  if (detailPrice && detailPrice > 0) {
+    displayLoanSimulation(detailPrice);
+  }
+
   log('詳細ページ処理完了。単価表示数:', document.querySelectorAll('.fudosan-unit-price').length);
+}
+
+/**
+ * 詳細ページで修繕積立金の平米単価を計算・表示する
+ * @param {number} area - 専有面積（㎡）
+ */
+function displayRepairFundPerSqm(area) {
+  let repairFundText = '';
+  let buildingFloorsText = '';
+  let totalUnitsText = '';
+  let repairFundRow = null; // 修繕積立金の表示行（挿入位置用）
+
+  if (SITE_TYPE === 'SUUMO') {
+    const tables = document.querySelectorAll('table');
+    for (const table of tables) {
+      const rows = table.querySelectorAll('tr');
+      for (const row of rows) {
+        const th = row.querySelector('th');
+        const td = row.querySelector('td');
+        if (!th || !td) continue;
+        const thText = th.textContent.trim();
+        if (thText.includes('修繕積立金') && !thText.includes('基金')) {
+          repairFundText = td.textContent.trim();
+          repairFundRow = row;
+        }
+        if (thText.includes('建物階数') || (thText.includes('所在階') && thText.includes('構造'))) {
+          buildingFloorsText = td.textContent.trim();
+        }
+        if (thText.includes('総戸数')) {
+          totalUnitsText = td.textContent.trim();
+        }
+      }
+    }
+  } else if (SITE_TYPE === 'REHOUSE') {
+    const bodyText = document.body.textContent;
+    const repairMatch = bodyText.match(/修繕積立金[等\s]*[^\d]*?([0-9,]+円)/);
+    if (repairMatch) repairFundText = repairMatch[1];
+    const floorsMatch = bodyText.match(/(?:地上)?(\d+)階建/);
+    if (floorsMatch) buildingFloorsText = floorsMatch[1] + '階建';
+    const unitsMatch = bodyText.match(/総戸数\s*([0-9,]+戸)/);
+    if (unitsMatch) totalUnitsText = unitsMatch[1];
+  } else if (SITE_TYPE === 'ATHOME') {
+    const tables = document.querySelectorAll('table');
+    for (const table of tables) {
+      const rows = table.querySelectorAll('tr');
+      for (const row of rows) {
+        const th = row.querySelector('th');
+        const td = row.querySelector('td');
+        if (!th || !td) continue;
+        const thText = th.textContent.trim();
+        if (thText.includes('修繕積立金')) {
+          repairFundText = td.textContent.trim();
+          repairFundRow = row;
+        }
+        if (thText.includes('階建')) {
+          buildingFloorsText = td.textContent.trim();
+        }
+        if (thText.includes('総戸数')) {
+          totalUnitsText = td.textContent.trim();
+        }
+      }
+    }
+  } else if (SITE_TYPE === 'HOMES') {
+    const bodyText = document.body.textContent;
+    const repairMatch = bodyText.match(/修繕積立金\s*([0-9,]+円)/);
+    if (repairMatch) repairFundText = repairMatch[1];
+    const floorsEl = document.querySelector('[data-component="buildingFloors"]');
+    if (floorsEl) buildingFloorsText = floorsEl.textContent.trim();
+    const unitsMatch = bodyText.match(/総戸数\s*([0-9,]+戸)/);
+    if (unitsMatch) totalUnitsText = unitsMatch[1];
+  }
+
+  if (!repairFundText) {
+    log('修繕積立金が見つかりません');
+    return;
+  }
+
+  log('修繕積立金テキスト:', repairFundText, '建物階数:', buildingFloorsText, '総戸数:', totalUnitsText);
+
+  const result = calculateRepairFundPerSqm(repairFundText, area, buildingFloorsText, totalUnitsText);
+  if (!result) {
+    log('修繕積立金の平米単価計算不可');
+    return;
+  }
+
+  log('修繕積立金計算結果:', result.perSqm, '円/㎡/月, 目安:', result.guideline, '円/㎡, 判定:', result.label);
+
+  // 既存の修繕積立金平米単価表示を削除
+  const existingRepairFund = document.querySelectorAll('.fudosan-repair-fund');
+  existingRepairFund.forEach(el => el.remove());
+
+  const repairFundDiv = createRepairFundElement(result);
+
+  // 挿入位置: 坪単価表示の直後に挿入
+  // 注意: insertUnitPriceAfterElementは既存の.fudosan-unit-priceを削除するため使わない
+  if (SITE_TYPE === 'SUUMO') {
+    // 上部の坪単価表示の後に挿入
+    const topUnitPrice = document.querySelector('.mt7.b + .fudosan-unit-price:not(.fudosan-repair-fund)');
+    if (topUnitPrice && topUnitPrice.parentElement) {
+      if (topUnitPrice.nextSibling) {
+        topUnitPrice.parentElement.insertBefore(repairFundDiv, topUnitPrice.nextSibling);
+      } else {
+        topUnitPrice.parentElement.appendChild(repairFundDiv);
+      }
+      log('修繕積立金平米単価を上部に挿入');
+    }
+
+    // テーブル内の修繕積立金行にも挿入
+    if (repairFundRow) {
+      const td = repairFundRow.querySelector('td');
+      if (td) {
+        const existing = td.querySelector('.fudosan-repair-fund');
+        if (existing) existing.remove();
+        const compactDiv = createRepairFundElement(result);
+        compactDiv.classList.add('fudosan-unit-price--compact');
+        td.appendChild(compactDiv);
+        log('修繕積立金平米単価をテーブル内に挿入');
+      }
+    }
+  } else {
+    // REHOUSE, ATHOME, HOMES: 坪単価表示の後に挿入
+    const unitPriceEl = document.querySelector('.fudosan-unit-price:not(.fudosan-repair-fund)');
+    if (unitPriceEl && unitPriceEl.parentElement) {
+      if (unitPriceEl.nextSibling) {
+        unitPriceEl.parentElement.insertBefore(repairFundDiv, unitPriceEl.nextSibling);
+      } else {
+        unitPriceEl.parentElement.appendChild(repairFundDiv);
+      }
+      log('修繕積立金平米単価を坪単価表示の下に挿入');
+    }
+  }
 }
 
 /**
@@ -1860,9 +2729,17 @@ function createExportButton() {
 /**
  * 初期化処理
  */
-function init() {
+async function init() {
   log('拡張機能が起動しました');
   log('URL:', window.location.href);
+
+  // お気に入りデータを読み込み
+  try {
+    await loadFavoriteUrls();
+    log('お気に入りデータ読み込み完了:', favoriteUrls.size, '件');
+  } catch (error) {
+    logError('お気に入りデータ読み込みエラー:', error);
+  }
 
   // ページ読み込み時に処理
   processAllProperties();

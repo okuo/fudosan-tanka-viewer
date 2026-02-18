@@ -15,6 +15,9 @@ Write-Host "Copying files..." -ForegroundColor Yellow
 Copy-Item "manifest.json" "dist/"
 Copy-Item "content.js" "dist/"
 Copy-Item "styles.css" "dist/"
+Copy-Item "popup.html" "dist/"
+Copy-Item "popup.js" "dist/"
+Copy-Item "popup.css" "dist/"
 Copy-Item -Recurse "icons" "dist/"
 
 # Remove old zip if exists

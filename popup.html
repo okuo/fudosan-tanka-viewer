@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>お気に入り物件</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="popup-header">
+    <h1>お気に入り物件</h1>
+  </div>
+
+  <div class="filter-bar">
+    <button class="filter-btn active" data-site="all">全て</button>
+    <button class="filter-btn" data-site="SUUMO">SUUMO</button>
+    <button class="filter-btn" data-site="REHOUSE">リハウス</button>
+    <button class="filter-btn" data-site="ATHOME">アットホーム</button>
+    <button class="filter-btn" data-site="HOMES">ホームズ</button>
+  </div>
+
+  <div id="favorites-list" class="favorites-list"></div>
+  <div id="empty-message" class="empty-message" style="display: none;">
+    お気に入りはまだありません
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>

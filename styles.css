@@ -81,6 +81,276 @@
 }
 
 /* =============================================
+   Repair Fund Per-Sqm Display
+   ============================================= */
+
+.fudosan-repair-fund {
+  border-left-color: #059669;
+  background: #ecfdf5;
+}
+
+.repair-fund-adequate {
+  font-size: 12px;
+  font-weight: 600;
+  color: #059669;
+}
+
+.repair-fund-warning {
+  font-size: 12px;
+  font-weight: 600;
+  color: #dc2626;
+}
+
+/* =============================================
+   Monthly Cost Display
+   ============================================= */
+
+.fudosan-monthly-cost {
+  border-left-color: #d97706;
+  background: #fffbeb;
+  display: block;
+  max-width: fit-content;
+}
+
+.monthly-cost-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.monthly-cost-icon {
+  font-size: 14px;
+}
+
+.monthly-cost-label {
+  font-size: 12px;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.monthly-cost-total {
+  font-size: 15px;
+  font-weight: 700;
+  color: #b45309;
+}
+
+.monthly-cost-breakdown {
+  font-size: 11px;
+  font-weight: 500;
+  color: #78716c;
+  margin-top: 2px;
+  padding-left: 18px;
+}
+
+.monthly-cost-conditions {
+  font-size: 10px;
+  font-weight: 400;
+  color: #a8a29e;
+  margin-top: 2px;
+  padding-left: 18px;
+}
+
+.monthly-cost-note {
+  margin-left: 6px;
+  color: #d97706;
+}
+
+/* =============================================
+   Loan Simulation
+   ============================================= */
+
+.fudosan-loan-sim {
+  border-left-color: #7c3aed;
+  background: #f5f3ff;
+  display: block;
+  max-width: 380px;
+  white-space: normal;
+}
+
+.loan-sim-header {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.loan-sim-toggle {
+  font-size: 10px;
+  color: #7c3aed;
+  width: 12px;
+}
+
+.loan-sim-icon {
+  font-size: 14px;
+}
+
+.loan-sim-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #5b21b6;
+}
+
+.loan-sim-body {
+  margin-top: 8px;
+}
+
+.loan-sim-inputs {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.loan-sim-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.loan-sim-input-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: #64748b;
+  min-width: 52px;
+  flex-shrink: 0;
+}
+
+.loan-sim-input-controls {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+}
+
+.loan-sim-slider {
+  flex: 1;
+  height: 4px;
+  -webkit-appearance: none;
+  appearance: none;
+  background: #ddd6fe;
+  border-radius: 2px;
+  outline: none;
+}
+
+.loan-sim-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #7c3aed;
+  cursor: pointer;
+}
+
+.loan-sim-input-wrap {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+}
+
+.loan-sim-input {
+  width: 64px;
+  padding: 2px 4px;
+  border: 1px solid #ddd6fe;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #1e293b;
+  text-align: right;
+  outline: none;
+  font-family: inherit;
+}
+
+.loan-sim-input:focus {
+  border-color: #7c3aed;
+  box-shadow: 0 0 0 1px rgba(124, 58, 237, 0.2);
+}
+
+/* Hide number input spinners */
+.loan-sim-input::-webkit-outer-spin-button,
+.loan-sim-input::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.loan-sim-input-unit {
+  font-size: 11px;
+  color: #64748b;
+  min-width: 16px;
+}
+
+.loan-sim-result {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid #ede9fe;
+}
+
+.loan-sim-result-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 2px 0;
+}
+
+.loan-sim-result-highlight {
+  background: #ede9fe;
+  border-radius: 4px;
+  padding: 4px 6px;
+  margin: 2px -6px;
+}
+
+.loan-sim-result-label {
+  font-size: 11px;
+  font-weight: 500;
+  color: #64748b;
+}
+
+.loan-sim-result-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: #1e293b;
+}
+
+.loan-sim-monthly {
+  font-size: 15px;
+  font-weight: 700;
+  color: #5b21b6;
+}
+
+/* =============================================
+   Favorite Button
+   ============================================= */
+
+.fudosan-favorite-btn {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  font-size: 16px;
+  line-height: 1;
+  color: #94a3b8;
+  cursor: pointer;
+  vertical-align: middle;
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.fudosan-favorite-btn:hover {
+  color: #f59e0b;
+  transform: scale(1.15);
+}
+
+.fudosan-favorite-btn--active {
+  color: #f59e0b;
+}
+
+.fudosan-unit-price--compact .fudosan-favorite-btn {
+  font-size: 13px;
+  margin-left: 6px;
+}
+
+/* =============================================
    Responsive
    ============================================= */
 
@@ -211,8 +481,15 @@
     print-color-adjust: exact;
   }
 
+  .fudosan-monthly-cost {
+    background: #fffbeb;
+    border-left-color: #d97706;
+  }
+
+  .fudosan-loan-sim,
   .fudosan-csv-export-button,
-  .fudosan-export-progress {
+  .fudosan-export-progress,
+  .fudosan-favorite-btn {
     display: none;
   }
 }

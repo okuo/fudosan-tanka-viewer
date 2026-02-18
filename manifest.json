@@ -3,7 +3,7 @@
   "name": "不動産坪単価・平米単価表示",
   "version": "1.4.1",
   "description": "SUUMO、三井のリハウス、アットホーム、ホームズの物件ページに坪単価と平米単価を自動表示します",
-  "permissions": [],
+  "permissions": ["storage"],
   "host_permissions": [
     "*://*.suumo.jp/*",
     "*://*.rehouse.co.jp/*",
@@ -23,6 +23,13 @@
       "run_at": "document_end"
     }
   ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png"
+    }
+  },
   "icons": {
     "16": "icons/icon16.png",
     "48": "icons/icon48.png",
