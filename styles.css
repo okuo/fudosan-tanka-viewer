@@ -101,6 +101,17 @@
   color: #dc2626;
 }
 
+.repair-fund-link {
+  text-decoration: none;
+  color: #64748b;
+  border-bottom: 1px dashed #94a3b8;
+}
+
+.repair-fund-link:hover {
+  color: #059669;
+  border-bottom-color: #059669;
+}
+
 /* =============================================
    Monthly Cost Display
    ============================================= */

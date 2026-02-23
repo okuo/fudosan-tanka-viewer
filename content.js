@@ -138,7 +138,19 @@ function calculateMonthlyLoanPayment(principal, annualRate, years) {
  */
 function extractYenAmount(text) {
   if (!text) return null;
-  const match = text.replace(/,/g, '').match(/(\d+(?:\.\d+)?)\s*円/);
+  const cleaned = text.replace(/,/g, '');
+
+  // 「1万2630円」「2万円」のような万を含む形式に対応
+  const manMatch = cleaned.match(/(\d+)万\s*(\d*)\s*円/);
+  if (manMatch) {
+    const manPart = parseInt(manMatch[1], 10) * 10000;
+    const remainder = manMatch[2] ? parseInt(manMatch[2], 10) : 0;
+    const amount = manPart + remainder;
+    return amount > 0 ? amount : null;
+  }
+
+  // 通常の形式: "12630円"
+  const match = cleaned.match(/(\d+(?:\.\d+)?)\s*円/);
   if (match) {
     const amount = parseFloat(match[1]);
     return amount > 0 ? amount : null;
@@ -166,18 +178,16 @@ function calculateRepairFundPerSqm(repairFundText, area, buildingFloorsText, tot
   if (!repairFundText || !area || area <= 0) return null;
 
   // 修繕積立金から数値（円）を抽出
-  const fundMatch = repairFundText.replace(/,/g, '').match(/(\d+(?:\.\d+)?)\s*円/);
-  if (!fundMatch) return null;
-
-  const fundYen = parseFloat(fundMatch[1]);
-  if (fundYen <= 0) return null;
+  const fundYen = extractYenAmount(repairFundText);
+  if (!fundYen || fundYen <= 0) return null;
 
   const perSqm = Math.round(fundYen / area);
 
-  // 建物階数を取得
+  // 建物階数を取得（地下部分を除去してから地上階数を抽出）
   let buildingFloors = 0;
   if (buildingFloorsText) {
-    const floorsMatch = buildingFloorsText.replace(/地上/g, '').match(/(\d+)階/);
+    const cleaned = buildingFloorsText.replace(/地下\d+階/g, '').replace(/地上/g, '');
+    const floorsMatch = cleaned.match(/(\d+)階/);
     if (floorsMatch) {
       buildingFloors = parseInt(floorsMatch[1], 10);
     }
@@ -225,7 +235,7 @@ function createRepairFundElement(result) {
     <span class="unit-price-label">修繕積立金単価:</span>
     <span class="unit-price-value repair-fund-value">${result.perSqm.toLocaleString()}円/㎡/月</span>
     <span class="unit-price-separator">|</span>
-    <span class="unit-price-label">目安:</span>
+    <a href="https://www.mlit.go.jp/jutakukentiku/house/content/001747009.pdf" target="_blank" rel="noopener" class="unit-price-label repair-fund-link">目安:</a>
     <span class="unit-price-value">${result.guideline}円/㎡</span>
     <span class="unit-price-separator">|</span>
     <span class="${statusClass}">${statusIcon} ${result.label}</span>
@@ -293,6 +303,7 @@ function extractManagementAndRepairFees() {
   let repairFundText = '';
 
   if (SITE_TYPE === 'SUUMO') {
+    // テーブルのth/tdから取得を試みる
     const tables = document.querySelectorAll('table');
     for (const table of tables) {
       const rows = table.querySelectorAll('tr');
@@ -301,7 +312,7 @@ function extractManagementAndRepairFees() {
         const td = row.querySelector('td');
         if (!th || !td) continue;
         const thText = th.textContent.trim();
-        if (thText.includes('管理費') && !thText.includes('修繕')) {
+        if (thText.includes('管理費') && !thText.includes('修繕積立金')) {
           managementFeeText = td.textContent.trim();
         }
         if (thText.includes('修繕積立金') && !thText.includes('基金')) {
@@ -309,11 +320,22 @@ function extractManagementAndRepairFees() {
         }
       }
     }
+    // フォールバック: テーブルから取得できなかった場合、本文テキストから検索
+    if (!managementFeeText || !extractYenAmount(managementFeeText)) {
+      const bodyText = document.body.textContent;
+      const mgmtMatch = bodyText.match(/管理費[等]*[^\d万]*?([0-9,]+(?:万[0-9,]*)?円)/);
+      if (mgmtMatch) managementFeeText = mgmtMatch[1];
+    }
+    if (!repairFundText || !extractYenAmount(repairFundText)) {
+      const bodyText = document.body.textContent;
+      const repairMatch = bodyText.match(/修繕積立金[等]*[^\d万]*?([0-9,]+(?:万[0-9,]*)?円)/);
+      if (repairMatch) repairFundText = repairMatch[1];
+    }
   } else if (SITE_TYPE === 'REHOUSE') {
     const bodyText = document.body.textContent;
-    const mgmtMatch = bodyText.match(/管理費[^\d]*?([0-9,]+円)/);
+    const mgmtMatch = bodyText.match(/管理費[等]*[^\d万]*?([0-9,]+(?:万[0-9,]*)?円)/);
     if (mgmtMatch) managementFeeText = mgmtMatch[1];
-    const repairMatch = bodyText.match(/修繕積立金[等\s]*[^\d]*?([0-9,]+円)/);
+    const repairMatch = bodyText.match(/修繕積立金[等]*[^\d万]*?([0-9,]+(?:万[0-9,]*)?円)/);
     if (repairMatch) repairFundText = repairMatch[1];
   } else if (SITE_TYPE === 'ATHOME') {
     const tables = document.querySelectorAll('table');
@@ -334,9 +356,9 @@ function extractManagementAndRepairFees() {
     }
   } else if (SITE_TYPE === 'HOMES') {
     const bodyText = document.body.textContent;
-    const mgmtMatch = bodyText.match(/管理費\s*([0-9,]+円)/);
+    const mgmtMatch = bodyText.match(/管理費[等]*[^\d万]*?([0-9,]+(?:万[0-9,]*)?円)/);
     if (mgmtMatch) managementFeeText = mgmtMatch[1];
-    const repairMatch = bodyText.match(/修繕積立金\s*([0-9,]+円)/);
+    const repairMatch = bodyText.match(/修繕積立金[等]*[^\d万]*?([0-9,]+(?:万[0-9,]*)?円)/);
     if (repairMatch) repairFundText = repairMatch[1];
   }
 
@@ -354,7 +376,7 @@ function extractManagementAndRepairFees() {
  * @param {number} priceMan - 物件価格（万円）
  */
 function displayMonthlyCost(priceMan) {
-  const annualRate = 0.005; // 0.5%
+  const annualRate = 0.008; // 0.8%
   const years = 35;
   const principal = priceMan * 10000; // 万円 -> 円
 
@@ -445,7 +467,7 @@ function displayLoanSimulation(priceMan) {
   inputsDiv.appendChild(downPaymentRow.row);
 
   // 金利
-  const rateRow = createSimInputRow('金利', 'loan-sim-rate', 0.5, 0.0, 5.0, 0.1, '%');
+  const rateRow = createSimInputRow('金利', 'loan-sim-rate', 0.8, 0.0, 5.0, 0.1, '%');
   inputsDiv.appendChild(rateRow.row);
 
   // 返済期間
@@ -647,7 +669,7 @@ function getPropertyCards() {
 
     return [...standardCards, ...groupedCards];
   } else {
-    return Array.from(document.querySelectorAll('.cassetteitem, .dottable--cassette, [class*="cassette"]'));
+    return Array.from(document.querySelectorAll('.cassetteitem, .dottable--cassette'));
   }
 }
 
@@ -1434,11 +1456,27 @@ function displayRepairFundPerSqm(area) {
         }
       }
     }
+    // フォールバック: テーブルから取得できなかった場合、本文テキストから検索
+    if (!repairFundText || !extractYenAmount(repairFundText)) {
+      const bodyText = document.body.textContent;
+      const repairMatch = bodyText.match(/修繕積立金[等]*[^\d万]*?([0-9,]+(?:万[0-9,]*)?円)/);
+      if (repairMatch) repairFundText = repairMatch[1];
+    }
+    if (!buildingFloorsText) {
+      const bodyText = document.body.textContent;
+      const floorsMatch = bodyText.match(/(?:地上|RC|SRC|鉄骨鉄筋|鉄筋|鉄骨)?(\d+)階(?:地下\d+階)?建/);
+      if (floorsMatch) buildingFloorsText = floorsMatch[1] + '階建';
+    }
+    if (!totalUnitsText) {
+      const bodyText = document.body.textContent;
+      const unitsMatch = bodyText.match(/総戸数\s*([0-9,]+戸)/);
+      if (unitsMatch) totalUnitsText = unitsMatch[1];
+    }
   } else if (SITE_TYPE === 'REHOUSE') {
     const bodyText = document.body.textContent;
-    const repairMatch = bodyText.match(/修繕積立金[等\s]*[^\d]*?([0-9,]+円)/);
+    const repairMatch = bodyText.match(/修繕積立金[等]*[^\d万]*?([0-9,]+(?:万[0-9,]*)?円)/);
     if (repairMatch) repairFundText = repairMatch[1];
-    const floorsMatch = bodyText.match(/(?:地上)?(\d+)階建/);
+    const floorsMatch = bodyText.match(/(?:地上|RC|SRC|鉄骨鉄筋|鉄筋|鉄骨)?(\d+)階(?:地下\d+階)?建/);
     if (floorsMatch) buildingFloorsText = floorsMatch[1] + '階建';
     const unitsMatch = bodyText.match(/総戸数\s*([0-9,]+戸)/);
     if (unitsMatch) totalUnitsText = unitsMatch[1];
@@ -1465,7 +1503,7 @@ function displayRepairFundPerSqm(area) {
     }
   } else if (SITE_TYPE === 'HOMES') {
     const bodyText = document.body.textContent;
-    const repairMatch = bodyText.match(/修繕積立金\s*([0-9,]+円)/);
+    const repairMatch = bodyText.match(/修繕積立金[等]*[^\d万]*?([0-9,]+(?:万[0-9,]*)?円)/);
     if (repairMatch) repairFundText = repairMatch[1];
     const floorsEl = document.querySelector('[data-component="buildingFloors"]');
     if (floorsEl) buildingFloorsText = floorsEl.textContent.trim();
@@ -1746,7 +1784,7 @@ async function fetchDetailPageInfo(url, siteType = SITE_TYPE) {
             }
           } else if (thText.includes('建物階数')) {
             detailInfo.buildingFloors = tdText;
-          } else if (thText.includes('管理費') && !thText.includes('修繕')) {
+          } else if (thText.includes('管理費') && !thText.includes('修繕積立金')) {
             detailInfo.managementFee = tdText.split(/\[/)[0].trim();
             log('管理費取得:', detailInfo.managementFee);
           } else if (thText.includes('修繕積立金')) {
@@ -1861,13 +1899,13 @@ function extractRehouseDetailInfo(doc, detailInfo) {
   }
 
   // 管理費: 最初の1つのみ取得
-  const managementMatch = bodyText.match(/管理費[等\s]*[^\d]*?([0-9,]+円)(?:\s|\/|月|$)/);
+  const managementMatch = bodyText.match(/管理費[等]*[^\d万]*?([0-9,]+(?:万[0-9,]*)?円)(?:\s|\/|月|$)/);
   if (managementMatch) {
     detailInfo.managementFee = managementMatch[1];
   }
 
   // 修繕積立金: 最初の1つのみ取得
-  const repairMatch = bodyText.match(/修繕積立金[等\s]*[^\d]*?([0-9,]+円)(?:\s|\/|月|$)/);
+  const repairMatch = bodyText.match(/修繕積立金[等]*[^\d万]*?([0-9,]+(?:万[0-9,]*)?円)(?:\s|\/|月|$)/);
   if (repairMatch) {
     detailInfo.repairFund = repairMatch[1];
   }
@@ -2075,12 +2113,12 @@ function extractHomesDetailInfo(doc, detailInfo) {
   if (buildingFloorsEl) detailInfo.buildingFloors = buildingFloorsEl.textContent.trim();
 
   // テキストから情報を抽出
-  const managementMatch = bodyText.match(/管理費\s*([0-9,]+円)/);
+  const managementMatch = bodyText.match(/管理費[等]*[^\d万]*?([0-9,]+(?:万[0-9,]*)?円)/);
   if (managementMatch) {
     detailInfo.managementFee = managementMatch[1];
   }
 
-  const repairMatch = bodyText.match(/修繕積立金\s*([0-9,]+円)/);
+  const repairMatch = bodyText.match(/修繕積立金[等]*[^\d万]*?([0-9,]+(?:万[0-9,]*)?円)/);
   if (repairMatch) {
     detailInfo.repairFund = repairMatch[1];
   }
