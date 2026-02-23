@@ -362,6 +362,21 @@
 }
 
 /* =============================================
+   Rehouse Detail Page - Flex Layout Fix
+   ============================================= */
+
+.fudosan-rehouse-badges {
+  flex-basis: 100%;
+  margin-top: 8px;
+}
+
+.fudosan-rehouse-badges > .fudosan-unit-price {
+  display: block;
+  max-width: fit-content;
+  margin-bottom: 4px;
+}
+
+/* =============================================
    Responsive
    ============================================= */
 

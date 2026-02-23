@@ -1362,7 +1362,23 @@ function processDetailPage() {
         price: detailPrice, tsubotanka: tsuboPrice, area: detailArea
       });
       unitPriceDiv.appendChild(favBtn);
-      insertUnitPriceAfterElement(priceElement, unitPriceDiv);
+      // REHOUSE: .property-detail-information内にラッパーを作成し、flexの新しい行に配置
+      const infoSection = document.querySelector('.property-detail-information');
+      if (infoSection) {
+        let wrapper = infoSection.querySelector('.fudosan-rehouse-badges');
+        if (!wrapper) {
+          wrapper = document.createElement('div');
+          wrapper.className = 'fudosan-rehouse-badges';
+          infoSection.style.flexWrap = 'wrap';
+          infoSection.appendChild(wrapper);
+        }
+        // 既存の坪単価バッジのみ削除
+        const existing = wrapper.querySelector('.fudosan-unit-price:not(.fudosan-repair-fund):not(.fudosan-monthly-cost):not(.fudosan-loan-sim)');
+        if (existing) existing.remove();
+        wrapper.insertBefore(unitPriceDiv, wrapper.firstChild);
+      } else {
+        insertUnitPriceAfterElement(priceElement, unitPriceDiv);
+      }
       log('価格表示の下に表示を挿入');
     } else if (SITE_TYPE === 'HOMES' && priceElement) {
       const unitPriceDiv = createUnitPriceElement(tsuboPrice, heiheiPrice, false);
