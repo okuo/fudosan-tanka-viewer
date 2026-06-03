@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
 ## プロジェクト概要
 
@@ -61,7 +61,7 @@ fudosan-tanka-viewer/
 ├── build.ps1              # ローカル用ビルドスクリプト（Windows）
 ├── PRIVACY_PRACTICES.txt  # Chrome Web Store プライバシー情報
 ├── STORE_LISTING_TEXT.txt  # Chrome Web Store 掲載テキスト
-└── CLAUDE.md              # このファイル
+└── AGENTS.md              # このファイル
 ```
 
 ## 開発・テスト方法

@@ -167,6 +167,76 @@
 }
 
 /* =============================================
+   List Monthly Cost / Price Watch
+   ============================================= */
+
+.fudosan-list-monthly-cost {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(203, 213, 225, 0.8);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.list-monthly-cost-label,
+.list-monthly-cost-scope,
+.list-monthly-cost-condition {
+  color: #64748b;
+  font-weight: 500;
+}
+
+.list-monthly-cost-value {
+  color: #b45309;
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.list-monthly-cost-condition {
+  font-size: 10px;
+}
+
+.fudosan-list-monthly-cost--compact {
+  gap: 4px;
+  margin-top: 4px;
+  padding-top: 4px;
+  font-size: 10px;
+}
+
+.fudosan-list-monthly-cost--compact .list-monthly-cost-value {
+  font-size: 12px;
+}
+
+.fudosan-price-watch {
+  display: block;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(203, 213, 225, 0.8);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.4;
+  white-space: normal;
+}
+
+.fudosan-price-watch--up {
+  color: #dc2626;
+}
+
+.fudosan-price-watch--down {
+  color: #059669;
+}
+
+.fudosan-unit-price--compact .fudosan-price-watch {
+  margin-top: 4px;
+  padding-top: 4px;
+  font-size: 10px;
+}
+
+/* =============================================
    Loan Simulation
    ============================================= */
 
@@ -361,6 +431,33 @@
   margin-left: 6px;
 }
 
+.fudosan-unit-price--good {
+  border-left-color: #16a34a;
+  background: #f0fdf4;
+}
+
+.fudosan-unit-price--warn {
+  border-left-color: #d97706;
+  background: #fffbeb;
+}
+
+.fudosan-unit-price--alert {
+  border-left-color: #dc2626;
+  background: #fef2f2;
+}
+
+.fudosan-property-highlight--good {
+  box-shadow: inset 0 0 0 1px rgba(22, 163, 74, 0.12);
+}
+
+.fudosan-property-highlight--warn {
+  box-shadow: inset 0 0 0 2px rgba(217, 119, 6, 0.18);
+}
+
+.fudosan-property-highlight--alert {
+  box-shadow: inset 0 0 0 2px rgba(220, 38, 38, 0.2);
+}
+
 /* =============================================
    Rehouse Detail Page - Flex Layout Fix
    ============================================= */
@@ -374,6 +471,53 @@
   display: block;
   max-width: fit-content;
   margin-bottom: 4px;
+}
+
+.fudosan-highlight-panel {
+  position: fixed;
+  top: 16px;
+  right: 16px;
+  z-index: 10000;
+  width: 220px;
+  padding: 12px;
+  border: 1px solid #dbe2ea;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 8px 24px rgba(15, 23, 42, 0.12);
+  backdrop-filter: blur(8px);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+.fudosan-highlight-panel__title {
+  margin-bottom: 8px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.fudosan-highlight-panel__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 8px;
+  font-size: 12px;
+  color: #475569;
+}
+
+.fudosan-highlight-panel__row input[type="number"],
+.fudosan-highlight-panel__row select {
+  width: 112px;
+  padding: 4px 6px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  font-size: 12px;
+  color: #1e293b;
+  background: #ffffff;
+}
+
+.fudosan-highlight-panel__row input[type="checkbox"] {
+  margin: 0;
 }
 
 /* =============================================
@@ -397,6 +541,13 @@
   .unit-price-separator {
     margin: 0 6px;
   }
+
+  .fudosan-highlight-panel {
+    top: auto;
+    right: 10px;
+    bottom: 110px;
+    width: 200px;
+  }
 }
 
 /* =============================================
@@ -405,7 +556,7 @@
 
 .fudosan-csv-export-button {
   position: fixed;
-  top: 80px;
+  top: 210px;
   right: 16px;
   z-index: 10000;
   padding: 12px 20px;
@@ -443,7 +594,7 @@
 
 .fudosan-export-progress {
   position: fixed;
-  top: 132px;
+  top: 262px;
   right: 16px;
   z-index: 10000;
   width: 200px;
@@ -515,7 +666,8 @@
   .fudosan-loan-sim,
   .fudosan-csv-export-button,
   .fudosan-export-progress,
-  .fudosan-favorite-btn {
+  .fudosan-favorite-btn,
+  .fudosan-highlight-panel {
     display: none;
   }
 }

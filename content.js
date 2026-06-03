@@ -12,6 +12,25 @@ const calculationCache = new Map();
 
 // お気に入りURLのSetをキャッシュ（ページ内での高速参照用）
 let favoriteUrls = new Set();
+let favoriteDataByUrl = new Map();
+const syncedFavoriteUrls = new Set();
+let lastLoanSettingsSaveAt = 0;
+
+const DEFAULT_LOAN_SETTINGS = {
+  annualRatePercent: 0.8,
+  years: 35,
+  downPaymentMan: 0
+};
+
+const DEFAULT_HIGHLIGHT_SETTINGS = {
+  enabled: false,
+  tsuboPriceLimit: '',
+  repairFundMode: 'none',
+  monthlyCostLimit: ''
+};
+
+let currentLoanSettings = { ...DEFAULT_LOAN_SETTINGS };
+let currentHighlightSettings = { ...DEFAULT_HIGHLIGHT_SETTINGS };
 
 // 現在のサイトを判定
 const SITE_TYPE = window.location.hostname.includes('rehouse.co.jp')
@@ -166,6 +185,45 @@ function sleep(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function getStorageData(defaults) {
+  return new Promise((resolve) => {
+    chrome.storage.local.get(defaults, resolve);
+  });
+}
+
+function setStorageData(data) {
+  return new Promise((resolve) => {
+    chrome.storage.local.set(data, resolve);
+  });
+}
+
+function normalizeLoanSettings(settings = {}) {
+  const annualRatePercent = Number(settings.annualRatePercent);
+  const years = parseInt(settings.years, 10);
+  const downPaymentMan = Number(settings.downPaymentMan);
+
+  return {
+    annualRatePercent: Number.isFinite(annualRatePercent) && annualRatePercent >= 0
+      ? annualRatePercent
+      : DEFAULT_LOAN_SETTINGS.annualRatePercent,
+    years: Number.isFinite(years) && years > 0
+      ? years
+      : DEFAULT_LOAN_SETTINGS.years,
+    downPaymentMan: Number.isFinite(downPaymentMan) && downPaymentMan >= 0
+      ? downPaymentMan
+      : DEFAULT_LOAN_SETTINGS.downPaymentMan
+  };
+}
+
+function normalizeHighlightSettings(settings = {}) {
+  return {
+    enabled: Boolean(settings.enabled),
+    tsuboPriceLimit: settings.tsuboPriceLimit ?? '',
+    repairFundMode: settings.repairFundMode || 'none',
+    monthlyCostLimit: settings.monthlyCostLimit ?? ''
+  };
+}
+
 /**
  * 修繕積立金の平米単価を計算し、国交省ガイドラインと比較
  * @param {string} repairFundText - 修繕積立金テキスト（例: "12,000円/月"）
@@ -276,6 +334,9 @@ function createMonthlyCostElement(loanMonthly, managementFee, repairFund, annual
     : '';
 
   const ratePercent = (annualRate * 100).toFixed(1);
+  const downPaymentLabel = currentLoanSettings.downPaymentMan > 0
+    ? ` / 頭金${currentLoanSettings.downPaymentMan.toLocaleString()}万円`
+    : '';
 
   div.innerHTML = `
     <div class="monthly-cost-header">
@@ -287,11 +348,181 @@ function createMonthlyCostElement(loanMonthly, managementFee, repairFund, annual
       （${parts.join(' + ')}）
     </div>
     <div class="monthly-cost-conditions">
-      ※金利${ratePercent}% / ${years}年返済
+      ※金利${ratePercent}% / ${years}年返済${downPaymentLabel}
       ${missingNote}
     </div>
   `;
   return div;
+}
+
+function normalizeOptionalYenAmount(value) {
+  if (value === null || value === undefined || value === '') return null;
+  const amount = Number(value);
+  return Number.isFinite(amount) && amount > 0 ? amount : null;
+}
+
+function calculateMonthlyCostBreakdown(priceMan, fees = {}) {
+  const annualRate = currentLoanSettings.annualRatePercent / 100;
+  const years = currentLoanSettings.years;
+  const principal = Math.max(0, (priceMan - currentLoanSettings.downPaymentMan) * 10000);
+  const loanMonthly = calculateMonthlyLoanPayment(principal, annualRate, years);
+  const managementFee = normalizeOptionalYenAmount(fees.managementFee);
+  const repairFund = normalizeOptionalYenAmount(fees.repairFund);
+
+  return {
+    loanMonthly,
+    managementFee,
+    repairFund,
+    totalMonthly: loanMonthly + (managementFee || 0) + (repairFund || 0),
+    annualRate,
+    years,
+    downPaymentMan: currentLoanSettings.downPaymentMan
+  };
+}
+
+function formatMonthlyCostShort(amount) {
+  if (!amount || amount <= 0) return '';
+  if (amount >= 10000) {
+    const man = Math.round(amount / 1000) / 10;
+    return `約${man.toLocaleString()}万円`;
+  }
+  return `約${amount.toLocaleString()}円`;
+}
+
+function createListMonthlyCostElement(monthlyCost, isCompact) {
+  if (!monthlyCost || monthlyCost.loanMonthly <= 0) return null;
+
+  const div = document.createElement('div');
+  div.className = isCompact
+    ? 'fudosan-list-monthly-cost fudosan-list-monthly-cost--compact'
+    : 'fudosan-list-monthly-cost';
+
+  const includedParts = [];
+  if (monthlyCost.managementFee !== null) includedParts.push('管理費');
+  if (monthlyCost.repairFund !== null) includedParts.push('修繕');
+
+  const scopeLabel = includedParts.length > 0
+    ? `${includedParts.join('・')}込`
+    : 'ローンのみ';
+  const ratePercent = (monthlyCost.annualRate * 100).toFixed(1);
+  const downPaymentLabel = monthlyCost.downPaymentMan > 0
+    ? ` / 頭金${monthlyCost.downPaymentMan.toLocaleString()}万円`
+    : '';
+
+  div.innerHTML = `
+    <span class="list-monthly-cost-label">月々概算</span>
+    <span class="list-monthly-cost-value">${formatMonthlyCostShort(monthlyCost.totalMonthly)}</span>
+    <span class="list-monthly-cost-scope">${scopeLabel}</span>
+    <span class="list-monthly-cost-condition">${ratePercent}%/${monthlyCost.years}年${downPaymentLabel}</span>
+  `;
+
+  return div;
+}
+
+function formatPriceMan(price) {
+  if (!price) return '';
+  if (price >= 10000) {
+    const oku = Math.floor(price / 10000);
+    const man = price % 10000;
+    return man === 0 ? `${oku}億円` : `${oku}億${man.toLocaleString()}万円`;
+  }
+  return `${price.toLocaleString()}万円`;
+}
+
+function formatSignedMan(diff) {
+  return `${diff > 0 ? '+' : ''}${diff.toLocaleString()}万円`;
+}
+
+function getPriceWatchInfo(favorite, currentPrice) {
+  if (!favorite || !currentPrice) return null;
+
+  const storedCurrentPrice = favorite.currentPrice || favorite.price || null;
+  if (storedCurrentPrice && currentPrice !== storedCurrentPrice) {
+    const diff = currentPrice - storedCurrentPrice;
+    return {
+      diff,
+      previousPrice: storedCurrentPrice,
+      currentPrice,
+      detectedNow: true
+    };
+  }
+
+  if (favorite.previousPrice && storedCurrentPrice && favorite.previousPrice !== storedCurrentPrice) {
+    const diff = storedCurrentPrice - favorite.previousPrice;
+    return {
+      diff,
+      previousPrice: favorite.previousPrice,
+      currentPrice: storedCurrentPrice,
+      detectedNow: false
+    };
+  }
+
+  return null;
+}
+
+function createPriceWatchElement(watchInfo) {
+  if (!watchInfo) return null;
+
+  const div = document.createElement('div');
+  div.className = `fudosan-price-watch ${watchInfo.diff > 0 ? 'fudosan-price-watch--up' : 'fudosan-price-watch--down'}`;
+
+  const movement = watchInfo.diff > 0 ? '値上がり' : '値下がり';
+  const prefix = watchInfo.detectedNow ? '価格改定検知' : '価格改定';
+  div.textContent = `${prefix}: ${movement} ${formatSignedMan(watchInfo.diff)} (${formatPriceMan(watchInfo.previousPrice)} → ${formatPriceMan(watchInfo.currentPrice)})`;
+
+  return div;
+}
+
+function buildNextPriceHistory(favorite, previousPrice, currentPrice, checkedAt) {
+  const history = Array.isArray(favorite.priceHistory) ? favorite.priceHistory : [];
+  if (!previousPrice || !currentPrice || previousPrice === currentPrice) {
+    return history;
+  }
+
+  const latest = history[0];
+  if (
+    latest &&
+    latest.previousPrice === previousPrice &&
+    latest.currentPrice === currentPrice
+  ) {
+    return [
+      { ...latest, checkedAt },
+      ...history.slice(1)
+    ];
+  }
+
+  return [
+    {
+      previousPrice,
+      currentPrice,
+      diff: currentPrice - previousPrice,
+      checkedAt
+    },
+    ...history
+  ].slice(0, 20);
+}
+
+async function loadLoanSettings() {
+  const result = await getStorageData({ loanSettings: DEFAULT_LOAN_SETTINGS });
+  currentLoanSettings = normalizeLoanSettings(result.loanSettings);
+  return currentLoanSettings;
+}
+
+async function saveLoanSettings(settings) {
+  currentLoanSettings = normalizeLoanSettings(settings);
+  lastLoanSettingsSaveAt = Date.now();
+  await setStorageData({ loanSettings: currentLoanSettings });
+}
+
+async function loadHighlightSettings() {
+  const result = await getStorageData({ highlightSettings: DEFAULT_HIGHLIGHT_SETTINGS });
+  currentHighlightSettings = normalizeHighlightSettings(result.highlightSettings);
+  return currentHighlightSettings;
+}
+
+async function saveHighlightSettings(settings) {
+  currentHighlightSettings = normalizeHighlightSettings(settings);
+  await setStorageData({ highlightSettings: currentHighlightSettings });
 }
 
 /**
@@ -376,9 +607,9 @@ function extractManagementAndRepairFees() {
  * @param {number} priceMan - 物件価格（万円）
  */
 function displayMonthlyCost(priceMan) {
-  const annualRate = 0.008; // 0.8%
-  const years = 35;
-  const principal = priceMan * 10000; // 万円 -> 円
+  const annualRate = currentLoanSettings.annualRatePercent / 100;
+  const years = currentLoanSettings.years;
+  const principal = Math.max(0, (priceMan - currentLoanSettings.downPaymentMan) * 10000);
 
   const loanMonthly = calculateMonthlyLoanPayment(principal, annualRate, years);
   if (loanMonthly <= 0) {
@@ -463,15 +694,15 @@ function displayLoanSimulation(priceMan) {
   inputsDiv.className = 'loan-sim-inputs';
 
   // 頭金
-  const downPaymentRow = createSimInputRow('頭金', 'loan-sim-down', 0, 0, priceMan, 100, '万円');
+  const downPaymentRow = createSimInputRow('頭金', 'loan-sim-down', currentLoanSettings.downPaymentMan, 0, priceMan, 100, '万円');
   inputsDiv.appendChild(downPaymentRow.row);
 
   // 金利
-  const rateRow = createSimInputRow('金利', 'loan-sim-rate', 0.8, 0.0, 5.0, 0.1, '%');
+  const rateRow = createSimInputRow('金利', 'loan-sim-rate', currentLoanSettings.annualRatePercent, 0.0, 5.0, 0.1, '%');
   inputsDiv.appendChild(rateRow.row);
 
   // 返済期間
-  const yearsRow = createSimInputRow('返済期間', 'loan-sim-years', 35, 10, 50, 5, '年');
+  const yearsRow = createSimInputRow('返済期間', 'loan-sim-years', currentLoanSettings.years, 10, 50, 5, '年');
   inputsDiv.appendChild(yearsRow.row);
 
   body.appendChild(inputsDiv);
@@ -500,6 +731,17 @@ function displayLoanSimulation(priceMan) {
     const downPayment = parseFloat(downPaymentRow.input.value) || 0;
     const rate = parseFloat(rateRow.input.value) || 0;
     const years = parseInt(yearsRow.input.value, 10) || 35;
+
+    saveLoanSettings({
+      downPaymentMan: downPayment,
+      annualRatePercent: rate,
+      years
+    }).then(() => {
+      const propertyCards = getPropertyCards();
+      if (propertyCards.length === 0) {
+        displayMonthlyCost(priceMan);
+      }
+    });
 
     const borrowing = Math.max(0, priceYen - downPayment * 10000);
     const annualRate = rate / 100;
@@ -734,6 +976,132 @@ function createUnavailableElement(isCompact) {
   return div;
 }
 
+function extractFeesFromText(text) {
+  const managementMatch = text.match(/管理費[^\d万]*([0-9,]+(?:万[0-9,]*)?円)/);
+  const repairMatch = text.match(/修繕積立金[^\d万]*([0-9,]+(?:万[0-9,]*)?円)/);
+  return {
+    managementFee: managementMatch ? extractYenAmount(managementMatch[1]) : null,
+    repairFund: repairMatch ? extractYenAmount(repairMatch[1]) : null
+  };
+}
+
+function analyzeListPropertyMetrics(element, price, area, tsuboPrice) {
+  const text = element.textContent || '';
+  const fees = extractFeesFromText(text);
+  const monthlyCost = calculateMonthlyCostBreakdown(price, fees);
+  const metrics = {
+    tsuboPrice,
+    monthlyCost: monthlyCost.totalMonthly || null,
+    repairFundResult: null
+  };
+
+  if (fees.repairFund && area) {
+    metrics.repairFundResult = calculateRepairFundPerSqm(`${fees.repairFund}円`, area, '', '');
+  }
+
+  return metrics;
+}
+
+function applyHighlightToUnitPrice(element, unitPriceDiv, metrics) {
+  if (!currentHighlightSettings.enabled || !unitPriceDiv) return;
+
+  unitPriceDiv.classList.remove(
+    'fudosan-unit-price--alert',
+    'fudosan-unit-price--warn',
+    'fudosan-unit-price--good'
+  );
+  element.classList.remove(
+    'fudosan-property-highlight--alert',
+    'fudosan-property-highlight--warn',
+    'fudosan-property-highlight--good'
+  );
+
+  const highlightReasons = [];
+
+  const tsuboLimit = Number(currentHighlightSettings.tsuboPriceLimit);
+  if (tsuboLimit > 0 && metrics.tsuboPrice && metrics.tsuboPrice > tsuboLimit) {
+    highlightReasons.push('坪単価が上限超過');
+  }
+
+  if (currentHighlightSettings.repairFundMode === 'warn' && metrics.repairFundResult && !metrics.repairFundResult.isAdequate) {
+    highlightReasons.push('修繕積立金が目安以下');
+  }
+
+  const monthlyLimit = Number(currentHighlightSettings.monthlyCostLimit);
+  if (monthlyLimit > 0 && metrics.monthlyCost && metrics.monthlyCost > monthlyLimit) {
+    highlightReasons.push('月額総コストが上限超過');
+  }
+
+  if (highlightReasons.length === 0) {
+    unitPriceDiv.classList.add('fudosan-unit-price--good');
+    element.classList.add('fudosan-property-highlight--good');
+    unitPriceDiv.title = '条件内';
+    return;
+  }
+
+  const hasHardLimit = highlightReasons.some(reason => reason.includes('上限超過'));
+  unitPriceDiv.classList.add(hasHardLimit ? 'fudosan-unit-price--alert' : 'fudosan-unit-price--warn');
+  element.classList.add(hasHardLimit ? 'fudosan-property-highlight--alert' : 'fudosan-property-highlight--warn');
+  unitPriceDiv.title = highlightReasons.join(' / ');
+}
+
+function createHighlightPanel() {
+  let panel = document.getElementById('fudosan-highlight-panel');
+  if (panel) panel.remove();
+
+  panel = document.createElement('div');
+  panel.id = 'fudosan-highlight-panel';
+  panel.className = 'fudosan-highlight-panel';
+  panel.innerHTML = `
+    <div class="fudosan-highlight-panel__title">検索色分け</div>
+    <label class="fudosan-highlight-panel__row">
+      <input type="checkbox" id="fudosan-highlight-enabled">
+      <span>有効化</span>
+    </label>
+    <label class="fudosan-highlight-panel__row">
+      <span>坪単価上限</span>
+      <input type="number" id="fudosan-highlight-tsubo" min="0" step="1" placeholder="万円/坪">
+    </label>
+    <label class="fudosan-highlight-panel__row">
+      <span>修繕積立金</span>
+      <select id="fudosan-highlight-repair">
+        <option value="none">判定しない</option>
+        <option value="warn">目安以下を警告</option>
+      </select>
+    </label>
+    <label class="fudosan-highlight-panel__row">
+      <span>月額総コスト上限</span>
+      <input type="number" id="fudosan-highlight-monthly" min="0" step="1000" placeholder="円/月">
+    </label>
+  `;
+
+  document.body.appendChild(panel);
+
+  const enabled = panel.querySelector('#fudosan-highlight-enabled');
+  const tsubo = panel.querySelector('#fudosan-highlight-tsubo');
+  const repair = panel.querySelector('#fudosan-highlight-repair');
+  const monthly = panel.querySelector('#fudosan-highlight-monthly');
+
+  enabled.checked = currentHighlightSettings.enabled;
+  tsubo.value = currentHighlightSettings.tsuboPriceLimit;
+  repair.value = currentHighlightSettings.repairFundMode;
+  monthly.value = currentHighlightSettings.monthlyCostLimit;
+
+  const handleChange = async () => {
+    await saveHighlightSettings({
+      enabled: enabled.checked,
+      tsuboPriceLimit: tsubo.value,
+      repairFundMode: repair.value,
+      monthlyCostLimit: monthly.value
+    });
+    processAllProperties();
+  };
+
+  [enabled, tsubo, repair, monthly].forEach((input) => {
+    input.addEventListener('change', handleChange);
+  });
+}
+
 /**
  * 対象要素の直後に単価表示を挿入する（既存の表示があれば削除）
  * 詳細ページでの REHOUSE/HOMES/ATHOME/SUUMO 共通の挿入処理
@@ -770,6 +1138,7 @@ function loadFavoriteUrls() {
   return new Promise((resolve) => {
     chrome.storage.local.get({ favorites: [] }, (result) => {
       favoriteUrls = new Set(result.favorites.map(f => f.url));
+      favoriteDataByUrl = new Map(result.favorites.map(f => [f.url, f]));
       resolve();
     });
   });
@@ -785,9 +1154,19 @@ function addFavorite(data) {
     chrome.storage.local.get({ favorites: [] }, (result) => {
       const favorites = result.favorites;
       if (!favorites.some(f => f.url === data.url)) {
-        favorites.push(data);
+        const now = new Date().toISOString();
+        favorites.push({
+          memo: '',
+          currentPrice: data.price || null,
+          previousPrice: null,
+          priceHistory: [],
+          priceUpdatedAt: data.price ? now : null,
+          lastCheckedAt: now,
+          ...data
+        });
         chrome.storage.local.set({ favorites }, () => {
           favoriteUrls.add(data.url);
+          favoriteDataByUrl = new Map(favorites.map(f => [f.url, f]));
           log('お気に入り追加:', data.url);
           resolve();
         });
@@ -809,9 +1188,69 @@ function removeFavorite(url) {
       const favorites = result.favorites.filter(f => f.url !== url);
       chrome.storage.local.set({ favorites }, () => {
         favoriteUrls.delete(url);
+        favoriteDataByUrl.delete(url);
+        syncedFavoriteUrls.delete(url);
         log('お気に入り削除:', url);
         resolve();
       });
+    });
+  });
+}
+
+function syncFavoritePropertyData(propertyInfo) {
+  if (!propertyInfo.url || !favoriteUrls.has(propertyInfo.url) || syncedFavoriteUrls.has(propertyInfo.url)) {
+    return;
+  }
+
+  syncedFavoriteUrls.add(propertyInfo.url);
+
+  chrome.storage.local.get({ favorites: [] }, (result) => {
+    let changed = false;
+    const now = new Date().toISOString();
+
+    const favorites = result.favorites.map((favorite) => {
+      if (favorite.url !== propertyInfo.url) return favorite;
+      const storedCurrentPrice = favorite.currentPrice || favorite.price || null;
+
+      const nextFavorite = {
+        ...favorite,
+        name: propertyInfo.name || favorite.name || '',
+        area: propertyInfo.area || favorite.area || null,
+        tsubotanka: propertyInfo.tsubotanka || favorite.tsubotanka || null,
+        site: favorite.site || SITE_TYPE,
+        priceHistory: Array.isArray(favorite.priceHistory) ? favorite.priceHistory : [],
+        lastCheckedAt: now
+      };
+
+      if (propertyInfo.price && storedCurrentPrice && propertyInfo.price !== storedCurrentPrice) {
+        nextFavorite.previousPrice = storedCurrentPrice;
+        nextFavorite.currentPrice = propertyInfo.price;
+        nextFavorite.price = propertyInfo.price;
+        nextFavorite.priceUpdatedAt = now;
+        nextFavorite.priceHistory = buildNextPriceHistory(favorite, storedCurrentPrice, propertyInfo.price, now);
+        changed = true;
+      } else if (propertyInfo.price && !storedCurrentPrice) {
+        nextFavorite.currentPrice = propertyInfo.price;
+        nextFavorite.price = propertyInfo.price;
+        nextFavorite.priceUpdatedAt = now;
+        changed = true;
+      } else if (
+        nextFavorite.name !== favorite.name ||
+        nextFavorite.area !== favorite.area ||
+        nextFavorite.tsubotanka !== favorite.tsubotanka ||
+        nextFavorite.lastCheckedAt !== favorite.lastCheckedAt
+      ) {
+        changed = true;
+      }
+
+      return nextFavorite;
+    });
+
+    if (!changed) return;
+
+    chrome.storage.local.set({ favorites }, () => {
+      favoriteDataByUrl = new Map(favorites.map(f => [f.url, f]));
+      log('お気に入り情報を同期:', propertyInfo.url);
     });
   });
 }
@@ -1179,6 +1618,15 @@ function processProperty(element) {
     unitPriceDiv = createUnavailableElement(isInTable);
   }
 
+  const listFees = extractFeesFromText(element.textContent || '');
+  if (price && price > 0) {
+    const monthlyCost = calculateMonthlyCostBreakdown(price, listFees);
+    const monthlyCostDiv = createListMonthlyCostElement(monthlyCost, isInTable);
+    if (monthlyCostDiv) {
+      unitPriceDiv.appendChild(monthlyCostDiv);
+    }
+  }
+
   // 既存の単価表示があれば削除
   const existingInParent = priceElement.parentElement?.querySelector('.fudosan-unit-price');
   if (existingInParent) {
@@ -1192,14 +1640,27 @@ function processProperty(element) {
   // お気に入りボタンを単価表示に追加
   const propertyUrl = extractPropertyUrl(element);
   if (propertyUrl) {
-    const favBtn = createFavoriteButton({
+    const watchedFavorite = favoriteDataByUrl.get(propertyUrl);
+    const priceWatchDiv = createPriceWatchElement(getPriceWatchInfo(watchedFavorite, price));
+    if (priceWatchDiv) {
+      unitPriceDiv.appendChild(priceWatchDiv);
+    }
+
+    const favoriteInfo = {
       url: propertyUrl,
       name: extractPropertyName(element),
       price: price,
       tsubotanka: tsuboPrice,
       area: area
-    });
+    };
+    const favBtn = createFavoriteButton(favoriteInfo);
     unitPriceDiv.appendChild(favBtn);
+    syncFavoritePropertyData(favoriteInfo);
+  }
+
+  if (price && area && tsuboPrice) {
+    const metrics = analyzeListPropertyMetrics(element, price, area, tsuboPrice);
+    applyHighlightToUnitPrice(element, unitPriceDiv, metrics);
   }
 
   // テーブル内の場合は価格要素（td）の中に追加
@@ -1341,27 +1802,33 @@ function processDetailPage() {
     // 詳細ページのお気に入りボタン用情報
     const detailUrl = window.location.href;
     const detailName = document.querySelector('h1')?.textContent?.trim() || '';
+    const favoriteInfo = {
+      url: detailUrl,
+      name: detailName,
+      price: detailPrice,
+      tsubotanka: tsuboPrice,
+      area: detailArea
+    };
+    syncFavoritePropertyData(favoriteInfo);
 
     // 上部の価格表示の下に追加
     if (SITE_TYPE === 'SUUMO') {
       const topPriceElement = document.querySelector('.mt7.b');
       if (topPriceElement && topPriceElement.parentElement) {
         const unitPriceDiv = createUnitPriceElement(tsuboPrice, heiheiPrice, false);
-        const favBtn = createFavoriteButton({
-          url: detailUrl, name: detailName,
-          price: detailPrice, tsubotanka: tsuboPrice, area: detailArea
-        });
+        const favBtn = createFavoriteButton(favoriteInfo);
         unitPriceDiv.appendChild(favBtn);
+        const priceWatchDiv = createPriceWatchElement(getPriceWatchInfo(favoriteDataByUrl.get(favoriteInfo.url), detailPrice));
+        if (priceWatchDiv) unitPriceDiv.appendChild(priceWatchDiv);
         insertUnitPriceAfterElement(topPriceElement, unitPriceDiv);
         log('上部に表示を挿入');
       }
     } else if (SITE_TYPE === 'REHOUSE' && priceElement) {
       const unitPriceDiv = createUnitPriceElement(tsuboPrice, heiheiPrice, false);
-      const favBtn = createFavoriteButton({
-        url: detailUrl, name: detailName,
-        price: detailPrice, tsubotanka: tsuboPrice, area: detailArea
-      });
+      const favBtn = createFavoriteButton(favoriteInfo);
       unitPriceDiv.appendChild(favBtn);
+      const priceWatchDiv = createPriceWatchElement(getPriceWatchInfo(favoriteDataByUrl.get(favoriteInfo.url), detailPrice));
+      if (priceWatchDiv) unitPriceDiv.appendChild(priceWatchDiv);
       // REHOUSE: .property-detail-information内にラッパーを作成し、flexの新しい行に配置
       const infoSection = document.querySelector('.property-detail-information');
       if (infoSection) {
@@ -1382,20 +1849,18 @@ function processDetailPage() {
       log('価格表示の下に表示を挿入');
     } else if (SITE_TYPE === 'HOMES' && priceElement) {
       const unitPriceDiv = createUnitPriceElement(tsuboPrice, heiheiPrice, false);
-      const favBtn = createFavoriteButton({
-        url: detailUrl, name: detailName,
-        price: detailPrice, tsubotanka: tsuboPrice, area: detailArea
-      });
+      const favBtn = createFavoriteButton(favoriteInfo);
       unitPriceDiv.appendChild(favBtn);
+      const priceWatchDiv = createPriceWatchElement(getPriceWatchInfo(favoriteDataByUrl.get(favoriteInfo.url), detailPrice));
+      if (priceWatchDiv) unitPriceDiv.appendChild(priceWatchDiv);
       insertUnitPriceAfterElement(priceElement, unitPriceDiv);
       log('価格表示の下に表示を挿入');
     } else if (SITE_TYPE === 'ATHOME' && priceElement) {
       const unitPriceDiv = createUnitPriceElement(tsuboPrice, heiheiPrice, false);
-      const favBtn = createFavoriteButton({
-        url: detailUrl, name: detailName,
-        price: detailPrice, tsubotanka: tsuboPrice, area: detailArea
-      });
+      const favBtn = createFavoriteButton(favoriteInfo);
       unitPriceDiv.appendChild(favBtn);
+      const priceWatchDiv = createPriceWatchElement(getPriceWatchInfo(favoriteDataByUrl.get(favoriteInfo.url), detailPrice));
+      if (priceWatchDiv) unitPriceDiv.appendChild(priceWatchDiv);
       insertUnitPriceAfterElement(priceElement, unitPriceDiv);
       log('価格表示の下に表示を挿入');
     }
@@ -1602,6 +2067,7 @@ function processAllProperties() {
     processDetailPage();
   } else {
     // 一覧ページ
+    processedElements.clear();
     processListPage(propertyCards);
   }
 }
@@ -2787,12 +3253,13 @@ async function init() {
   log('拡張機能が起動しました');
   log('URL:', window.location.href);
 
-  // お気に入りデータを読み込み
   try {
+    await loadLoanSettings();
+    await loadHighlightSettings();
     await loadFavoriteUrls();
-    log('お気に入りデータ読み込み完了:', favoriteUrls.size, '件');
+    log('設定・お気に入りデータ読み込み完了:', favoriteUrls.size, '件');
   } catch (error) {
-    logError('お気に入りデータ読み込みエラー:', error);
+    logError('初期データ読み込みエラー:', error);
   }
 
   // ページ読み込み時に処理
@@ -2808,12 +3275,35 @@ async function init() {
 
     if (propertyCards.length > 0) {
       log('一覧ページと判定、エクスポートボタンを追加');
+      createHighlightPanel();
       createExportButton();
     }
   } catch (error) {
     logError('エクスポートボタン追加エラー:', error);
   }
 }
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== 'local') return;
+
+  if (changes.favorites) {
+    const favorites = changes.favorites.newValue || [];
+    favoriteUrls = new Set(favorites.map(f => f.url));
+    favoriteDataByUrl = new Map(favorites.map(f => [f.url, f]));
+  }
+
+  if (changes.loanSettings) {
+    currentLoanSettings = normalizeLoanSettings(changes.loanSettings.newValue);
+    if (Date.now() - lastLoanSettingsSaveAt > 500) {
+      processAllProperties();
+    }
+  }
+
+  if (changes.highlightSettings) {
+    currentHighlightSettings = normalizeHighlightSettings(changes.highlightSettings.newValue);
+    processAllProperties();
+  }
+});
 
 // DOMContentLoaded後に初期化
 if (document.readyState === 'loading') {
