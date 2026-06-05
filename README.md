@@ -147,7 +147,6 @@ fudosan-tanka-viewer/
 
 ```bash
 node --check content.js
-node test_address_extraction.js
 node test_csv_export.js
 ```
 

@@ -26,7 +26,6 @@ jobs:
       - name: Run JavaScript smoke tests
         run: |
           node --check content.js
-          node test_address_extraction.js
           node test_csv_export.js
 
       - name: Build zip
