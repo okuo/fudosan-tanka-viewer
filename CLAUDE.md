@@ -417,16 +417,29 @@ if (SITE_TYPE === 'HOMES') {
 - タグバージョンと manifest.json バージョンの一致検証
 - zipビルド
 - GitHub Release 作成（zip添付、リリースノート自動生成）
-- Chrome Web Store アップロード（`publish: false`、審査提出は手動）
+- Chrome Web Store API v2 でアップロード
+- Chrome Web Store `publish` API で審査提出（承認後は既存の公開設定で公開）
+- 必須Secretsが未設定の場合はChrome Web Store連携のみスキップ
 
 ### GitHub Secrets
 
 | Secret | 用途 |
 |--------|------|
 | `EXTENSION_ID` | Chrome Web Store の拡張機能ID |
+| `CWS_PUBLISHER_ID` | Chrome Web Store のパブリッシャーID |
 | `CWS_CLIENT_ID` | Google OAuth Client ID |
 | `CWS_CLIENT_SECRET` | Google OAuth Client Secret |
 | `CWS_REFRESH_TOKEN` | Google OAuth Refresh Token |
+
+### GitHub Variables（任意）
+
+| Variable | デフォルト | 用途 |
+|----------|------------|------|
+| `CWS_AUTO_PUBLISH` | `true` | `false` にするとアップロードのみで審査提出しない |
+| `CWS_PUBLISH_TYPE` | `DEFAULT_PUBLISH` | `STAGED_PUBLISH` にすると承認後に手動公開待ちにする |
+| `CWS_BLOCK_ON_WARNINGS` | `true` | 警告がある場合に審査提出を失敗させる |
+| `CWS_SKIP_REVIEW` | `false` | 審査スキップを試す場合のみ `true` |
+| `CWS_DEPLOY_PERCENTAGE` | 未指定 | 初期ロールアウト率を指定する場合に設定 |
 
 ### リリース手順
 
@@ -435,9 +448,11 @@ if (SITE_TYPE === 'HOMES') {
 2. manifest.json のバージョンを上げる（例: 1.4.1 → 1.5.0）
 3. コミット & プッシュ（CI が検証＋ビルド）
 4. git tag v1.5.0 && git push origin v1.5.0
-5. → 自動で GitHub Release 作成＋Chrome Web Store アップロード
-6. Chrome Web Store Developer Dashboard で審査提出（手動）
+5. → 自動で GitHub Release 作成＋Chrome Web Store アップロード＋審査提出
+6. Chrome Web Store 側の審査完了後、既存の公開設定で公開
 ```
+
+Chrome Web Store Developer Dashboard で公開範囲などを手動変更した直後は、API公開が失敗する場合がある。その場合は一度Dashboardから手動公開してから次回以降をAPI化する。
 
 ## 今後の展開
 

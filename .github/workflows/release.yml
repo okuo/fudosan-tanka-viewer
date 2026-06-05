@@ -32,15 +32,17 @@ jobs:
           files: fudosan-tanka-viewer.zip
           generate_release_notes: true
 
-      - name: Upload to Chrome Web Store
-        if: env.EXTENSION_ID != ''
-        uses: mnao305/chrome-extension-upload@v5.0.0
-        with:
-          file-path: fudosan-tanka-viewer.zip
-          extension-id: ${{ secrets.EXTENSION_ID }}
-          client-id: ${{ secrets.CWS_CLIENT_ID }}
-          client-secret: ${{ secrets.CWS_CLIENT_SECRET }}
-          refresh-token: ${{ secrets.CWS_REFRESH_TOKEN }}
-          publish: false
+      - name: Upload and publish to Chrome Web Store
+        run: python3 .github/scripts/chrome_web_store_release.py
         env:
           EXTENSION_ID: ${{ secrets.EXTENSION_ID }}
+          CWS_PUBLISHER_ID: ${{ secrets.CWS_PUBLISHER_ID }}
+          CWS_CLIENT_ID: ${{ secrets.CWS_CLIENT_ID }}
+          CWS_CLIENT_SECRET: ${{ secrets.CWS_CLIENT_SECRET }}
+          CWS_REFRESH_TOKEN: ${{ secrets.CWS_REFRESH_TOKEN }}
+          CWS_PACKAGE_PATH: fudosan-tanka-viewer.zip
+          CWS_AUTO_PUBLISH: ${{ vars.CWS_AUTO_PUBLISH }}
+          CWS_PUBLISH_TYPE: ${{ vars.CWS_PUBLISH_TYPE }}
+          CWS_DEPLOY_PERCENTAGE: ${{ vars.CWS_DEPLOY_PERCENTAGE }}
+          CWS_SKIP_REVIEW: ${{ vars.CWS_SKIP_REVIEW }}
+          CWS_BLOCK_ON_WARNINGS: ${{ vars.CWS_BLOCK_ON_WARNINGS }}

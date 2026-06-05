@@ -147,6 +147,30 @@ fudosan-tanka-viewer/
 2. `chrome://extensions/` で「更新」ボタンをクリック
 3. 対象サイトのページをリロード
 
+## リリース自動化
+
+`v*.*.*` タグをPushすると、GitHub Actionsでzipを作成し、GitHub Releaseへ添付します。Chrome Web Store連携のSecretsが揃っている場合は、Chrome Web Store API v2でパッケージをアップロードし、`publish` APIで審査提出まで自動実行します。
+
+### 必須Secrets
+
+| Secret | 用途 |
+|--------|------|
+| `EXTENSION_ID` | Chrome Web Store の拡張機能ID |
+| `CWS_PUBLISHER_ID` | Chrome Web Store のパブリッシャーID |
+| `CWS_CLIENT_ID` | Google OAuth Client ID |
+| `CWS_CLIENT_SECRET` | Google OAuth Client Secret |
+| `CWS_REFRESH_TOKEN` | Google OAuth Refresh Token |
+
+### 任意Variables
+
+| Variable | デフォルト | 用途 |
+|----------|------------|------|
+| `CWS_AUTO_PUBLISH` | `true` | `false` にするとアップロードのみで審査提出しない |
+| `CWS_PUBLISH_TYPE` | `DEFAULT_PUBLISH` | `STAGED_PUBLISH` にすると承認後に手動公開待ちにする |
+| `CWS_BLOCK_ON_WARNINGS` | `true` | 警告がある場合に審査提出を失敗させる |
+| `CWS_SKIP_REVIEW` | `false` | 審査スキップを試す場合のみ `true` |
+| `CWS_DEPLOY_PERCENTAGE` | 未指定 | 初期ロールアウト率を指定する場合に設定 |
+
 ## プライバシーポリシー
 
 この拡張機能は**個人情報を一切収集しません**。
