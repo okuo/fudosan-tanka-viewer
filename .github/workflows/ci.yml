@@ -36,6 +36,12 @@ jobs:
           if [ "$missing" -eq 1 ]; then exit 1; fi
           echo "All required files present."
 
+      - name: Run JavaScript smoke tests
+        run: |
+          node --check content.js
+          node test_address_extraction.js
+          node test_csv_export.js
+
   build:
     runs-on: ubuntu-latest
     needs: validate

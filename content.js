@@ -2125,7 +2125,7 @@ async function fetchDetailPageInfo(url, siteType = SITE_TYPE) {
     const response = await fetch(url);
     if (!response.ok) {
       console.error(`[${siteType}坪単価] 詳細ページ取得失敗: ${url}`);
-      return {};
+      return { detailFetchStatus: '詳細取得失敗' };
     }
 
     const html = await response.text();
@@ -2134,6 +2134,7 @@ async function fetchDetailPageInfo(url, siteType = SITE_TYPE) {
 
     const detailInfo = {
       nameDetail: '',          // 詳細ページの物件名
+      detailFetchStatus: '詳細取得成功',
       floor: '',               // 階数
       direction: '',           // 向き
       buildingFloors: '',      // 建物階数
@@ -2324,7 +2325,7 @@ async function fetchDetailPageInfo(url, siteType = SITE_TYPE) {
 
   } catch (error) {
     logError('詳細ページ取得エラー:', url, error);
-    return {};
+    return { detailFetchStatus: '詳細取得失敗' };
   }
 }
 
@@ -2643,6 +2644,236 @@ function extractHomesDetailInfo(doc, detailInfo) {
 // CSVエクスポート機能
 // ============================================================
 
+function createEmptyCsvPropertyData() {
+  return {
+    site: SITE_TYPE,
+    name: '',
+    address: '',
+    price: '',
+    area: '',
+    tsuboPrice: '',
+    heiheiPrice: '',
+    age: '',
+    station: '',
+    url: '',
+    detailFetchStatus: '未取得',
+    // 詳細ページから取得する情報
+    nameDetail: '',          // 詳細ページの物件名（これで上書き）
+    floor: '',
+    direction: '',
+    buildingFloors: '',
+    managementFee: '',
+    repairFund: '',
+    totalUnits: '',
+    structure: '',
+    parking: '',
+    builtDate: '',
+    company: '',             // 不動産会社名
+    // 追加項目
+    layout: '',              // 間取り
+    salesUnits: '',          // 販売戸数
+    balconyArea: '',         // バルコニー面積
+    repairFundInitial: '',   // 修繕積立基金
+    otherFees: '',           // 諸費用
+    deliveryTime: '',        // 引渡可能時期
+    landArea: '',            // 敷地面積
+    landRights: '',          // 敷地の権利形態
+    zoning: '',              // 用途地域
+    constructor: '',         // 施工会社
+    energyPerformance: '',   // エネルギー消費性能
+    insulation: '',          // 断熱性能
+    utilityEstimate: '',     // 目安光熱費
+    reform: '',              // リフォーム
+    majorPriceRange: '',     // 最多価格帯
+    restrictions: '',        // その他制限事項
+    notes: ''                // その他概要・特記事項
+  };
+}
+
+function findFirstElement(root, selectors) {
+  for (const selector of selectors) {
+    const element = root.querySelector(selector);
+    if (element) return element;
+  }
+  return null;
+}
+
+function findValueByTableHeader(root, headerText) {
+  const rows = root.querySelectorAll('tr');
+  for (const row of rows) {
+    const ths = row.querySelectorAll('th');
+    for (const th of ths) {
+      if (th.textContent.includes(headerText)) {
+        const td = th.nextElementSibling;
+        if (td && td.tagName === 'TD') return td;
+      }
+    }
+  }
+  return null;
+}
+
+function extractCsvPriceElement(card) {
+  if (SITE_TYPE === 'REHOUSE') {
+    return findFirstElement(card, ['.price-text', '[class*="price"]']);
+  }
+  if (SITE_TYPE === 'ATHOME') {
+    return findFirstElement(card, ['.property-price', '[class*="price"]']);
+  }
+  if (SITE_TYPE === 'HOMES') {
+    return card.querySelector('td.price') || findValueByTableHeader(card, '価格');
+  }
+  return findFirstElement(card, [
+    '.dottable-value',
+    '.dkr-cassetteitem_price--num',
+    '.cassette_price--num',
+    '[class*="price"]'
+  ]);
+}
+
+function extractCsvAreaElement(card) {
+  if (SITE_TYPE === 'REHOUSE') {
+    const elements = card.querySelectorAll('.paragraph-body, [class*="area"]');
+    for (const el of elements) {
+      if (/(㎡|m2|m²)/.test(el.textContent)) return el;
+    }
+    return null;
+  }
+
+  if (SITE_TYPE === 'ATHOME') {
+    const blocks = card.querySelectorAll('.property-detail-table__block');
+    for (const block of blocks) {
+      if (!block.textContent.includes('専有面積')) continue;
+      const spans = block.querySelectorAll('span');
+      for (const span of spans) {
+        if (/(㎡|m2|m²|m)/.test(span.textContent)) return span;
+      }
+    }
+    return findFirstElement(card, ['[class*="area"]']);
+  }
+
+  if (SITE_TYPE === 'HOMES') {
+    return card.querySelector('td.space') || findValueByTableHeader(card, '専有面積');
+  }
+
+  const dts = card.querySelectorAll('dt');
+  for (const dt of dts) {
+    if (dt.textContent.includes('専有面積')) {
+      const dd = dt.nextElementSibling;
+      if (dd && dd.tagName === 'DD') return dd;
+    }
+  }
+  return findFirstElement(card, [
+    '.dkr-cassetteitem_detail_text--area',
+    '.cassette_detail_text--area',
+    '[class*="area"]'
+  ]);
+}
+
+function applySiteSpecificCsvListData(card, propertyData) {
+  propertyData.name = extractPropertyName(card);
+  propertyData.url = extractPropertyUrl(card);
+
+  if (SITE_TYPE === 'SUUMO') {
+    const dts = card.querySelectorAll('dt');
+    for (const dt of dts) {
+      const dtText = dt.textContent.trim();
+      const dd = dt.nextElementSibling;
+      if (!dd || dd.tagName !== 'DD') continue;
+
+      if (!propertyData.name && dtText.includes('物件名')) {
+        propertyData.name = dd.textContent.trim();
+      }
+      if (dtText.includes('所在地')) {
+        propertyData.address = dd.textContent.trim();
+      }
+    }
+
+    if (!propertyData.address) {
+      const addressElement = card.querySelector('.cassetteitem_detail-col1');
+      if (addressElement) {
+        const addressText = addressElement.textContent.trim().replace(/\s+/g, ' ');
+        const addressMatch = addressText.match(/^([^\n]+(?:区|市|町|村|郡)[^\n]*?)(?:\s{2,}|\n|築|階|専有)/);
+        propertyData.address = addressMatch
+          ? addressMatch[1].trim()
+          : addressText.split(/\n/)[0].trim();
+      }
+    }
+    return;
+  }
+
+  if (SITE_TYPE === 'ATHOME') {
+    const parentCard = card.closest('.card-box-inner') || card;
+    const allText = parentCard.textContent;
+    const addressWithLabel = allText.match(/所在地\s*([^\n]+)/);
+    if (addressWithLabel) {
+      propertyData.address = addressWithLabel[1].trim();
+    } else {
+      const addressMatch = allText.match(/(東京都|神奈川県|千葉県|埼玉県|大阪府|京都府|兵庫県|愛知県|福岡県|北海道)[^\n]{5,80}?(区|市|町|村)/);
+      if (addressMatch) propertyData.address = addressMatch[0].trim();
+    }
+    return;
+  }
+
+  if (SITE_TYPE === 'HOMES') {
+    const addressElement = card.querySelector('.bukkenAdress, [class*="address"]');
+    if (addressElement) propertyData.address = addressElement.textContent.trim();
+  }
+}
+
+function applyCommonCsvListData(card, propertyData) {
+  const priceElement = extractCsvPriceElement(card);
+  if (priceElement) {
+    propertyData.price = extractNumber(priceElement.textContent) || '';
+  }
+
+  const areaElement = extractCsvAreaElement(card);
+  if (areaElement) {
+    propertyData.area = extractNumber(areaElement.textContent) || '';
+  }
+
+  if (propertyData.price && propertyData.area) {
+    propertyData.tsuboPrice = calculateTsuboPrice(propertyData.price, propertyData.area);
+    propertyData.heiheiPrice = calculateHeiheiPrice(propertyData.price, propertyData.area);
+  }
+
+  const allText = card.textContent || '';
+  const builtMatch = allText.match(/築(\d+)年/);
+  if (builtMatch) propertyData.age = builtMatch[1] + '年';
+
+  const stationMatch = allText.match(/徒歩(\d+)分/);
+  if (stationMatch) propertyData.station = '徒歩' + stationMatch[1] + '分';
+
+  const layoutMatch = allText.match(/(\d+[SLDK]+)/);
+  if (layoutMatch) propertyData.layout = layoutMatch[1];
+
+  const fees = extractFeesFromText(allText);
+  if (fees.managementFee) propertyData.managementFee = `${fees.managementFee}円`;
+  if (fees.repairFund) propertyData.repairFund = `${fees.repairFund}円`;
+}
+
+function extractListCsvData(card) {
+  const propertyData = createEmptyCsvPropertyData();
+  applyCommonCsvListData(card, propertyData);
+  applySiteSpecificCsvListData(card, propertyData);
+  return propertyData;
+}
+
+function mergeCsvDetailInfo(property, detailInfo) {
+  for (const [key, value] of Object.entries(detailInfo)) {
+    if (key === 'detailFetchStatus') {
+      property.detailFetchStatus = value || property.detailFetchStatus;
+      continue;
+    }
+    if (value !== '' && value !== null && value !== undefined) {
+      property[key] = value;
+    }
+  }
+
+  if (detailInfo.nameDetail) {
+    property.name = detailInfo.nameDetail;
+  }
+}
+
 /**
  * 現在表示されている物件データを収集（非同期版）
  * @param {Function} progressCallback - 進捗通知コールバック (current, total)
@@ -2650,377 +2881,54 @@ function extractHomesDetailInfo(doc, detailInfo) {
  */
 async function collectPropertyData(progressCallback = null) {
   log('物件データ収集開始');
-  const properties = [];
-
   const propertyCards = getPropertyCards();
+  const properties = [];
 
   log('収集対象物件数:', propertyCards.length);
 
-  // 各物件からデータを抽出
   propertyCards.forEach((card, index) => {
     try {
-      const propertyData = {
-        site: SITE_TYPE,
-        name: '',
-        address: '',
-        price: '',
-        area: '',
-        tsuboPrice: '',
-        heiheiPrice: '',
-        age: '',
-        station: '',
-        url: '',
-        // 詳細ページから取得する情報
-        nameDetail: '',          // 詳細ページの物件名（これで上書き）
-        floor: '',
-        direction: '',
-        buildingFloors: '',
-        managementFee: '',
-        repairFund: '',
-        totalUnits: '',
-        structure: '',
-        parking: '',
-        builtDate: '',
-        company: '',             // 不動産会社名
-        // 追加項目
-        layout: '',              // 間取り
-        salesUnits: '',          // 販売戸数
-        balconyArea: '',         // バルコニー面積
-        repairFundInitial: '',   // 修繕積立基金
-        otherFees: '',           // 諸費用
-        deliveryTime: '',        // 引渡可能時期
-        landArea: '',            // 敷地面積
-        landRights: '',          // 敷地の権利形態
-        zoning: '',              // 用途地域
-        constructor: '',         // 施工会社
-        energyPerformance: '',   // エネルギー消費性能
-        insulation: '',          // 断熱性能
-        utilityEstimate: '',     // 目安光熱費
-        reform: '',              // リフォーム
-        majorPriceRange: '',     // 最多価格帯
-        restrictions: '',        // その他制限事項
-        notes: ''                // その他概要・特記事項
-      };
-
-      // 価格を抽出
-      let priceSelectors = [];
-      if (SITE_TYPE === 'REHOUSE') {
-        priceSelectors = ['.price-text'];
-      } else if (SITE_TYPE === 'ATHOME') {
-        priceSelectors = ['.property-price'];
-      } else if (SITE_TYPE === 'HOMES') {
-        priceSelectors = ['td.price'];
-      } else {
-        priceSelectors = ['.dottable-value', '.dkr-cassetteitem_price--num', '.cassette_price--num'];
-      }
-
-      let priceElement = null;
-      for (const selector of priceSelectors) {
-        priceElement = card.querySelector(selector);
-        if (priceElement) break;
-      }
-
-      // ホームズのグルーピング一覧ページの場合
-      if (!priceElement && SITE_TYPE === 'HOMES' && card.tagName === 'TR') {
-        const verticalTable = card.querySelector('.verticalTable');
-        if (verticalTable) {
-          const ths = verticalTable.querySelectorAll('th');
-          for (const th of ths) {
-            if (th.textContent.includes('価格')) {
-              priceElement = th.nextElementSibling;
-              break;
-            }
-          }
-        }
-      }
-
-      if (priceElement) {
-        propertyData.price = extractNumber(priceElement.textContent);
-      }
-
-      // 面積を抽出
-      let areaElement = null;
-      if (SITE_TYPE === 'REHOUSE') {
-        const elements = card.querySelectorAll('.paragraph-body');
-        for (const el of elements) {
-          if (el.textContent.includes('㎡') || el.textContent.includes('m2') || el.textContent.includes('m')) {
-            areaElement = el;
-            break;
-          }
-        }
-      } else if (SITE_TYPE === 'ATHOME') {
-        const blocks = card.querySelectorAll('.property-detail-table__block');
-        for (const block of blocks) {
-          if (block.textContent.includes('専有面積')) {
-            const spans = block.querySelectorAll('span');
-            for (const span of spans) {
-              if (span.textContent.includes('m') || span.textContent.includes('㎡')) {
-                areaElement = span;
-                break;
-              }
-            }
-            if (areaElement) break;
-          }
-        }
-      } else if (SITE_TYPE === 'HOMES') {
-        areaElement = card.querySelector('td.space');
-        // グルーピング一覧ページの場合
-        if (!areaElement && card.tagName === 'TR') {
-          const verticalTable = card.querySelector('.verticalTable');
-          if (verticalTable) {
-            const ths = verticalTable.querySelectorAll('th');
-            for (const th of ths) {
-              if (th.textContent.includes('専有面積')) {
-                areaElement = th.nextElementSibling;
-                break;
-              }
-            }
-          }
-        }
-      } else {
-        const dts = card.querySelectorAll('dt');
-        for (const dt of dts) {
-          if (dt.textContent.includes('専有面積')) {
-            areaElement = dt.nextElementSibling;
-            break;
-          }
-        }
-      }
-
-      if (areaElement) {
-        propertyData.area = extractNumber(areaElement.textContent);
-      }
-
-      // 坪単価・平米単価を計算
-      if (propertyData.price && propertyData.area) {
-        propertyData.tsuboPrice = calculateTsuboPrice(propertyData.price, propertyData.area);
-        propertyData.heiheiPrice = calculateHeiheiPrice(propertyData.price, propertyData.area);
-      }
-
-      // 物件名・住所を抽出（サイトごとに異なる）
-      if (SITE_TYPE === 'SUUMO') {
-        // 新しいSUUMOレイアウト: dl/dt/dd構造から取得
-        const dts = card.querySelectorAll('dt');
-        for (const dt of dts) {
-          const dtText = dt.textContent.trim();
-          const dd = dt.nextElementSibling;
-
-          if (dtText.includes('物件名') && dd && dd.tagName === 'DD') {
-            propertyData.name = dd.textContent.trim();
-          }
-
-          if (dtText.includes('所在地') && dd && dd.tagName === 'DD') {
-            propertyData.address = dd.textContent.trim();
-          }
-        }
-
-        // 旧レイアウトへのフォールバック
-        if (!propertyData.name) {
-          const titleElement = card.querySelector('.cassetteitem_content-title');
-          if (titleElement) {
-            propertyData.name = titleElement.textContent.trim();
-          }
-        }
-
-        if (!propertyData.address) {
-          const addressElement = card.querySelector('.cassetteitem_detail-col1');
-          if (addressElement) {
-            let addressText = addressElement.textContent.trim().replace(/\s+/g, ' ');
-            const addressMatch = addressText.match(/^([^\n]+(?:区|市|町|村|郡)[^\n]*?)(?:\s{2,}|\n|築|階|専有)/);
-            if (addressMatch) {
-              propertyData.address = addressMatch[1].trim();
-            } else {
-              propertyData.address = addressText.split(/\n/)[0].trim();
-            }
-          }
-        }
-      } else if (SITE_TYPE === 'REHOUSE') {
-        const titleElement = card.querySelector('.property-card-title, [class*="title"]');
-        if (titleElement) {
-          propertyData.name = titleElement.textContent.trim();
-        }
-
-        // 住所取得: 一覧ページでは詳細ページから取得する方が確実なので、ここではスキップ
-        propertyData.address = '';
-      } else if (SITE_TYPE === 'ATHOME') {
-        // アットホームの物件名は親要素(.card-box-inner)内にある
-        const parentCard = card.closest('.card-box-inner');
-
-        // 物件名: .title-wrap__title-text から取得
-        const titleElement = parentCard ? parentCard.querySelector('.title-wrap__title-text') : null;
-        if (titleElement) {
-          propertyData.name = titleElement.textContent.trim();
-        } else {
-          // フォールバック: 他のセレクタを試す
-          const titleSelectors = [
-            'h3 a',
-            'h2 a',
-            '.property-title',
-            '.bukken-name',
-            '[class*="title"] a'
-          ];
-          for (const selector of titleSelectors) {
-            const fallbackTitle = (parentCard || card).querySelector(selector);
-            if (fallbackTitle && fallbackTitle.textContent.trim()) {
-              propertyData.name = fallbackTitle.textContent.trim();
-              break;
-            }
-          }
-        }
-
-        // 住所: 親要素のテキストから「所在地」の後を取得
-        const allText = (parentCard || card).textContent;
-        const addressWithLabel = allText.match(/所在地\s*([^\n]+)/);
-        if (addressWithLabel) {
-          propertyData.address = addressWithLabel[1].trim();
-        } else {
-          // フォールバック: 都道府県名から始まる住所パターン
-          const addressMatch = allText.match(/(東京都|神奈川県|千葉県|埼玉県|大阪府|京都府|兵庫県|愛知県|福岡県|北海道)[^\n]{5,80}?(区|市|町|村)/);
-          if (addressMatch) {
-            propertyData.address = addressMatch[0].trim();
-          }
-        }
-      } else if (SITE_TYPE === 'HOMES') {
-        const titleElement = card.querySelector('.bukkenName, [class*="name"]');
-        if (titleElement) {
-          propertyData.name = titleElement.textContent.trim();
-        }
-        const addressElement = card.querySelector('.bukkenAdress, [class*="address"]');
-        if (addressElement) {
-          propertyData.address = addressElement.textContent.trim();
-        }
-      }
-
-      // 詳細ページURLを抽出
-      if (SITE_TYPE === 'SUUMO') {
-        // 新しいSUUMOレイアウト: 親要素からリンクを取得
-        const parentDiv = card.closest('.property_unit-body, .ui-media');
-        if (parentDiv) {
-          const links = parentDiv.querySelectorAll('a[href*="/ms/"], a[href*="/chuko/"]');
-          if (links.length > 0) {
-            const href = links[0].getAttribute('href');
-            if (href) {
-              propertyData.url = href.startsWith('http') ? href : new URL(href, window.location.origin).href;
-            }
-          }
-        }
-
-        // 旧レイアウトへのフォールバック
-        if (!propertyData.url) {
-          const linkSelectors = [
-            '.cassetteitem_content-title a',
-            'a[href*="/chuko/"]',
-            'a[href*="/ms/"]'
-          ];
-          for (const selector of linkSelectors) {
-            const linkElement = card.querySelector(selector);
-            if (linkElement) {
-              const href = linkElement.getAttribute('href');
-              if (href && !href.includes('#') && !href.includes('javascript:')) {
-                propertyData.url = href.startsWith('http') ? href : new URL(href, window.location.origin).href;
-                break;
-              }
-            }
-          }
-        }
-      } else if (SITE_TYPE === 'ATHOME') {
-        // アットホーム: 親要素から.select-linkを取得
-        const parentCard = card.closest('.card-box-inner');
-        const linkElement = (parentCard || card).querySelector('.select-link, a[href*="/mansion/"]');
-        if (linkElement) {
-          const href = linkElement.getAttribute('href');
-          if (href && !href.includes('javascript:')) {
-            propertyData.url = href.startsWith('http') ? href : new URL(href, window.location.origin).href;
-          }
-        }
-      } else {
-        // 他のサイト
-        const linkElement = card.querySelector('a[href]');
-        if (linkElement) {
-          const href = linkElement.getAttribute('href');
-          if (href) {
-            // 相対パスの場合は絶対パスに変換
-            propertyData.url = href.startsWith('http') ? href : new URL(href, window.location.origin).href;
-          }
-        }
-      }
-
-      // 築年数を抽出（可能な場合）
-      const allText = card.textContent;
-      const builtMatch = allText.match(/築(\d+)年/);
-      if (builtMatch) {
-        propertyData.age = builtMatch[1] + '年';
-      }
-
-      // 駅距離を抽出（可能な場合）
-      const stationMatch = allText.match(/徒歩(\d+)分/);
-      if (stationMatch) {
-        propertyData.station = '徒歩' + stationMatch[1] + '分';
-      }
-
-      // 間取りを抽出（可能な場合）
-      const layoutMatch = allText.match(/(\d+[SLDK]+)/);
-      if (layoutMatch) {
-        propertyData.layout = layoutMatch[1];
-      }
-
+      const propertyData = extractListCsvData(card);
       properties.push(propertyData);
       log(`物件${index + 1}データ収集:`, propertyData);
     } catch (error) {
+      const propertyData = createEmptyCsvPropertyData();
+      propertyData.detailFetchStatus = '基本情報取得失敗';
+      properties.push(propertyData);
       logError(`物件${index + 1}データ収集エラー:`, error);
     }
   });
 
   log('基本情報収集完了。物件数:', properties.length);
 
-  // 詳細ページから追加情報を取得（全サイト対応）
-  if (properties.length > 0) {
-    log('詳細ページから追加情報を取得開始...');
+  for (let i = 0; i < properties.length; i++) {
+    const property = properties[i];
 
-    for (let i = 0; i < properties.length; i++) {
-      const property = properties[i];
-
-      // 進捗通知
-      if (progressCallback) {
-        progressCallback(i + 1, properties.length);
-      }
-
-      if (property.url) {
-        log(`${i + 1}/${properties.length} 詳細ページ取得: ${property.url}`);
-
-        // 詳細情報を取得（サイトタイプを渡す）
-        const detailInfo = await fetchDetailPageInfo(property.url, SITE_TYPE);
-
-        // 一覧ページで既に取得した情報を保持
-        const existingAddress = property.address;
-
-        // プロパティにマージ
-        Object.assign(property, detailInfo);
-
-        // 詳細ページの物件名で上書き
-        if (detailInfo.nameDetail) {
-          property.name = detailInfo.nameDetail;
-        }
-
-        // 住所: 一覧ページで取得できていて詳細ページで取得できなかった場合は一覧ページの住所を維持
-        if (existingAddress && !detailInfo.address) {
-          property.address = existingAddress;
-        }
-
-        // サーバー負荷軽減: 各リクエスト間に2秒待機
-        if (i < properties.length - 1) {
-          await sleep(2000);
-
-          // 5件ごとに長めの待機（3秒）
-          if ((i + 1) % 5 === 0) {
-            log('5件処理完了。追加で1秒待機...');
-            await sleep(1000);
-          }
-        }
-      }
+    if (progressCallback) {
+      progressCallback(i + 1, properties.length);
     }
 
-    log('詳細情報取得完了');
+    if (!property.url) {
+      property.detailFetchStatus = '詳細URLなし';
+      continue;
+    }
+
+    log(`${i + 1}/${properties.length} 詳細ページ取得: ${property.url}`);
+    const detailInfo = await fetchDetailPageInfo(property.url, SITE_TYPE);
+    mergeCsvDetailInfo(property, detailInfo);
+
+    if (!property.detailFetchStatus || property.detailFetchStatus === '未取得') {
+      property.detailFetchStatus = '詳細取得成功';
+    }
+
+    if (i < properties.length - 1) {
+      await sleep(2000);
+
+      if ((i + 1) % 5 === 0) {
+        log('5件処理完了。追加で1秒待機...');
+        await sleep(1000);
+      }
+    }
   }
 
   log('全データ収集完了。物件数:', properties.length);
@@ -3048,6 +2956,7 @@ function generateCSV(properties) {
     heiheiPrice: '平米単価(万円/㎡)',
     age: '築年数',
     station: '駅距離',
+    detailFetchStatus: '詳細取得ステータス',
     floor: '階数',
     direction: '向き',
     buildingFloors: '建物階数',
@@ -3138,6 +3047,15 @@ function downloadCSV(csvContent) {
   log('CSVダウンロード完了:', filename);
 }
 
+function formatExportDuration(seconds) {
+  if (seconds < 60) return `約${seconds}秒`;
+  const minutes = Math.floor(seconds / 60);
+  const restSeconds = seconds % 60;
+  return restSeconds > 0
+    ? `約${minutes}分${restSeconds}秒`
+    : `約${minutes}分`;
+}
+
 /**
  * エクスポートボタンを作成
  */
@@ -3152,28 +3070,26 @@ function createExportButton() {
   const button = document.createElement('button');
   button.id = 'fudosan-csv-export-button';
   button.className = 'fudosan-csv-export-button';
-  button.innerHTML = '📊 CSVエクスポート (β版)';
-  button.title = '【ベータ版機能】現在のページの物件データをCSV形式でダウンロード\n・無料提供中ですが、将来的に有料化する可能性があります';
+  button.innerHTML = '📊 CSVエクスポート';
+  button.title = '現在の一覧ページの物件データをCSV形式でダウンロードします';
 
   // クリックイベント（非同期対応）
   button.addEventListener('click', async () => {
-    // 初回使用時のベータ版確認
-    const hasSeenBetaNotice = localStorage.getItem('csvBetaNoticeShown');
-    if (!hasSeenBetaNotice) {
-      const confirmed = confirm(
-        '📊 CSVエクスポート（ベータ版）\n\n' +
-        '現在無料で提供中ですが、以下の点にご留意ください：\n\n' +
-        '✓ ベータ版のため、仕様が変更される可能性があります\n' +
-        '✓ 将来的に有料化する可能性があります\n\n' +
-        'ご了承いただける場合は「OK」を押してください。'
-      );
-
-      if (!confirmed) {
-        return; // キャンセルされた場合は処理を中断
-      }
-
-      localStorage.setItem('csvBetaNoticeShown', 'true');
+    const propertyCount = getPropertyCards().length;
+    if (propertyCount === 0) {
+      alert('エクスポート可能な物件データが見つかりませんでした。');
+      return;
     }
+
+    const estimatedSeconds = propertyCount * 2 + Math.floor(propertyCount / 5);
+    const confirmed = confirm(
+      '📊 CSVエクスポート\n\n' +
+      `${propertyCount}件の物件をCSVに出力します。\n` +
+      `詳細情報取得の目安: ${formatExportDuration(estimatedSeconds)}\n\n` +
+      '詳細取得に失敗した物件も、一覧で取得できた情報だけでCSVに含めます。'
+    );
+
+    if (!confirmed) return;
 
     log('CSVエクスポート開始');
     button.disabled = true;
@@ -3203,7 +3119,7 @@ function createExportButton() {
       const properties = await collectPropertyData(progressCallback);
       if (properties.length === 0) {
         alert('エクスポート可能な物件データが見つかりませんでした。');
-        button.innerHTML = '📊 CSVエクスポート (β版)';
+        button.innerHTML = '📊 CSVエクスポート';
         button.disabled = false;
         progressContainer.remove();
         return;
@@ -3222,7 +3138,7 @@ function createExportButton() {
       progressContainer.remove();
       button.innerHTML = '✅ 完了！';
       setTimeout(() => {
-        button.innerHTML = '📊 CSVエクスポート (β版)';
+        button.innerHTML = '📊 CSVエクスポート';
         button.disabled = false;
       }, 2000);
     } catch (error) {
@@ -3231,7 +3147,7 @@ function createExportButton() {
       progressContainer.remove();
       button.innerHTML = '❌ エラー';
       setTimeout(() => {
-        button.innerHTML = '📊 CSVエクスポート (β版)';
+        button.innerHTML = '📊 CSVエクスポート';
         button.disabled = false;
       }, 2000);
     }
