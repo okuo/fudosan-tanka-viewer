@@ -33,12 +33,12 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - **詳細ページの月額コスト概算表示**: ローン返済額+管理費+修繕積立金の合計月額を表示（デフォルト: 金利0.8%, 35年返済, 頭金0円）
 - **住宅ローン条件の保存**: ポップアップまたは詳細ページのシミュレーションで設定した金利・返済年数・頭金を `chrome.storage.local` に保存
 - **住宅ローンシミュレーション**: 頭金・金利・返済期間をスライダーで調整してリアルタイム計算（詳細ページ、折りたたみUI）
-- **お気に入り機能**: 物件を☆ボタンでブックマーク、ポップアップでサイト横断一覧管理・メモ保存・並び替え（chrome.storage.local使用）
+- **お気に入り機能**: 物件を「坪たんに登録」ボタンでブックマーク、ポップアップでサイト横断一覧管理・メモ保存・並び替え（chrome.storage.local使用）
 - **価格改定ウォッチ**: お気に入り物件の価格を再訪時に比較し、値下がり/値上がりをページ上とポップアップに表示
 - **お気に入り自動再チェック**: `background.js` の alarms でお気に入り物件の価格・掲載状態を定期確認（最大5件/回、24時間以上未確認の物件）
 - **価格推移グラフ**: ポップアップで価格履歴をミニグラフ表示
 - **掲載終了検知**: 404/410や掲載終了文言から「掲載終了の可能性」を表示し、403等は「確認失敗」として扱う
-- **バージョン表示・リリースノート**: ポップアップ上部に `manifest.json` の version を表示し、更新後にWhat's Newを表示
+- **バージョン表示・リリースノート**: ポップアップ上部に `manifest.json` の version を表示し、更新後にWhat's Newと拡張アイコンのNEWバッジを表示
 - **CSVエクスポート**: 対応4サイトの一覧ページからワンクリックで全物件データをCSV出力
 - **詳細情報取得**: 各物件の詳細ページから階数、向き、管理費、修繕積立金などを自動取得
 - 同じ価格・面積の組み合わせはキャッシュして効率化
@@ -204,7 +204,7 @@ fudosan-tanka-viewer/
 
 - `chrome.storage.local` にお気に入りデータを保存
 - 保存データ: `{ url, name, price, currentPrice, previousPrice, priceHistory, priceUpdatedAt, lastCheckedAt, listingStatus, listingCheckedAt, lastAutoCheckedAt, tsubotanka, site, area, memo, addedAt }`
-- 一覧ページ・詳細ページの坪単価表示横に☆/★ボタン
+- 一覧ページ・詳細ページの坪単価表示横に「坪たんに登録」/「登録済み」ボタン
 - ポップアップUI（popup.html）でお気に入り一覧表示、サイト別フィルタ、並び替え、メモ編集、削除
 
 **権限:** `storage`（お気に入りデータのブラウザ内保存用）、`alarms`（定期再チェック用）
@@ -228,9 +228,9 @@ fudosan-tanka-viewer/
 
 ### リリースノート表示
 
-更新後の初回ポップアップ表示時にWhat's Newを表示する。閉じると `lastSeenReleaseNotesVersion` を `chrome.storage.local` に保存し、同一バージョンでは再表示しない。ポップアップ上部のバージョンボタンからいつでも履歴を再表示できる。
+更新後の初回ポップアップ表示時にWhat's Newを表示する。`background.js` は `chrome.runtime.onInstalled` の update で拡張アイコンに `NEW` バッジを表示し、`pendingReleaseNotesBadgeVersion` を保存する。What's Newを閉じると `lastSeenReleaseNotesVersion` を保存し、`RELEASE_NOTES_SEEN` メッセージでバッジを消す。同一バージョンでは再表示しない。ポップアップ上部のバージョンボタンからいつでも履歴を再表示できる。
 
-**関連ファイル:** popup.html, popup.js, popup.css
+**関連ファイル:** background.js, popup.html, popup.js, popup.css
 
 ### CSVエクスポート機能
 

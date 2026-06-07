@@ -18,6 +18,15 @@ const DEFAULT_LOAN_SETTINGS = {
 
 const RELEASE_NOTES = [
   {
+    version: '1.8.1',
+    title: '更新に気づきやすく改善',
+    items: [
+      '更新後、ツールバーの拡張アイコンにNEWバッジを表示するようにしました。',
+      'ポップアップで更新内容を確認して閉じると、NEWバッジが消えるようにしました。',
+      '物件登録ボタンを「坪たんに登録」と表示し、用途がわかりやすくなりました。'
+    ]
+  },
+  {
     version: '1.8.0',
     title: 'お気に入りの価格ウォッチを強化',
     items: [
@@ -102,7 +111,9 @@ function renderReleaseNotes() {
 function markReleaseNotesSeen() {
   const currentVersion = getCurrentVersion();
   if (!currentVersion) return;
-  chrome.storage.local.set({ [RELEASE_NOTES_STORAGE_KEY]: currentVersion });
+  chrome.storage.local.set({ [RELEASE_NOTES_STORAGE_KEY]: currentVersion }, () => {
+    chrome.runtime?.sendMessage?.({ type: 'RELEASE_NOTES_SEEN' });
+  });
 }
 
 function showReleaseNotes() {

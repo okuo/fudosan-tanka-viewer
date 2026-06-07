@@ -7,6 +7,9 @@ const FAVORITE_RECHECK_INTERVAL_MINUTES = 6 * 60;
 const FAVORITE_RECHECK_STALE_MS = 24 * 60 * 60 * 1000;
 const FAVORITE_RECHECK_BATCH_SIZE = 5;
 const FAVORITE_RECHECK_DELAY_MS = 2000;
+const RELEASE_NOTES_STORAGE_KEY = 'lastSeenReleaseNotesVersion';
+const RELEASE_NOTES_BADGE_VERSION_KEY = 'pendingReleaseNotesBadgeVersion';
+const RELEASE_NOTES_BADGE_TEXT = 'NEW';
 
 const LISTING_ENDED_PATTERNS = [
   /掲載(?:が)?終了/,
@@ -34,6 +37,50 @@ function setStorageData(data) {
 
 function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function getCurrentVersion() {
+  return chrome.runtime.getManifest().version || '';
+}
+
+async function setReleaseNotesBadge() {
+  await chrome.action.setBadgeText({ text: RELEASE_NOTES_BADGE_TEXT });
+  await chrome.action.setBadgeBackgroundColor({ color: '#2563eb' });
+  await chrome.action.setBadgeTextColor?.({ color: '#ffffff' });
+}
+
+async function clearReleaseNotesBadge() {
+  await chrome.action.setBadgeText({ text: '' });
+  await setStorageData({ [RELEASE_NOTES_BADGE_VERSION_KEY]: '' });
+}
+
+async function markReleaseNotesBadgePending() {
+  const currentVersion = getCurrentVersion();
+  if (!currentVersion) return;
+
+  await setStorageData({ [RELEASE_NOTES_BADGE_VERSION_KEY]: currentVersion });
+  await setReleaseNotesBadge();
+}
+
+async function refreshReleaseNotesBadge() {
+  const currentVersion = getCurrentVersion();
+  if (!currentVersion) return;
+
+  const result = await getStorageData({
+    [RELEASE_NOTES_STORAGE_KEY]: '',
+    [RELEASE_NOTES_BADGE_VERSION_KEY]: ''
+  });
+  if (
+    result[RELEASE_NOTES_BADGE_VERSION_KEY] === currentVersion &&
+    result[RELEASE_NOTES_STORAGE_KEY] !== currentVersion
+  ) {
+    await setReleaseNotesBadge();
+    return;
+  }
+
+  if (result[RELEASE_NOTES_BADGE_VERSION_KEY]) {
+    await clearReleaseNotesBadge();
+  }
 }
 
 function normalizeUrl(url) {
@@ -328,8 +375,18 @@ function ensureFavoriteRecheckAlarm() {
 }
 
 if (typeof chrome !== 'undefined' && chrome.runtime?.onInstalled) {
-  chrome.runtime.onInstalled.addListener(ensureFavoriteRecheckAlarm);
-  chrome.runtime.onStartup?.addListener(ensureFavoriteRecheckAlarm);
+  chrome.runtime.onInstalled.addListener((details) => {
+    ensureFavoriteRecheckAlarm();
+
+    if (details.reason === 'update') {
+      markReleaseNotesBadgePending().catch(error => console.warn('更新バッジの設定に失敗しました', error));
+    }
+  });
+
+  chrome.runtime.onStartup?.addListener(() => {
+    ensureFavoriteRecheckAlarm();
+    refreshReleaseNotesBadge().catch(error => console.warn('更新バッジの復元に失敗しました', error));
+  });
 
   chrome.alarms.onAlarm.addListener((alarm) => {
     if (alarm.name !== FAVORITE_RECHECK_ALARM) return;
@@ -337,6 +394,16 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onInstalled) {
   });
 
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    if (message?.type === 'RELEASE_NOTES_SEEN') {
+      clearReleaseNotesBadge()
+        .then(() => sendResponse({ ok: true }))
+        .catch((error) => {
+          sendResponse({ ok: false, error: error.message || '更新バッジのクリアに失敗しました' });
+        });
+
+      return true;
+    }
+
     if (message?.type !== 'RECHECK_FAVORITES_NOW') return false;
 
     recheckFavorites({ force: true })
@@ -364,6 +431,7 @@ if (typeof module !== 'undefined') {
     detectListingStatus,
     buildNextPriceHistory,
     mergeFavoriteRecheckResult,
-    shouldRecheckFavorite
+    shouldRecheckFavorite,
+    getFavoriteRecheckTime
   };
 }

@@ -404,31 +404,66 @@
    ============================================= */
 
 .fudosan-favorite-btn {
-  display: inline-block;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   margin-left: 8px;
-  padding: 0;
-  border: none;
-  background: transparent;
-  font-size: 16px;
-  line-height: 1;
-  color: #94a3b8;
+  padding: 3px 7px;
+  border: 1px solid #fcd34d;
+  border-radius: 999px;
+  background: #fffbeb;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  color: #92400e;
   cursor: pointer;
   vertical-align: middle;
-  transition: color 0.15s ease, transform 0.15s ease;
+  font-family: inherit;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease, transform 0.15s ease;
 }
 
 .fudosan-favorite-btn:hover {
-  color: #f59e0b;
-  transform: scale(1.15);
+  background: #fef3c7;
+  border-color: #f59e0b;
+  color: #78350f;
+  transform: translateY(-1px);
+}
+
+.fudosan-favorite-btn:focus {
+  outline: none;
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.2);
 }
 
 .fudosan-favorite-btn--active {
-  color: #f59e0b;
+  background: #f59e0b;
+  border-color: #f59e0b;
+  color: #ffffff;
+}
+
+.fudosan-favorite-icon {
+  font-size: 12px;
+  line-height: 1;
+}
+
+.fudosan-favorite-label {
+  white-space: nowrap;
 }
 
 .fudosan-unit-price--compact .fudosan-favorite-btn {
-  font-size: 13px;
+  gap: 3px;
+  padding: 2px 5px;
+  font-size: 10px;
   margin-left: 6px;
+}
+
+.fudosan-unit-price--compact .fudosan-favorite-icon {
+  font-size: 11px;
+}
+
+.fudosan-unit-price--compact .fudosan-favorite-label {
+  max-width: 70px;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .fudosan-unit-price--good {

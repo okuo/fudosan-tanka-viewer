@@ -1274,8 +1274,8 @@ function createFavoriteButton(propertyInfo) {
   const btn = document.createElement('button');
   btn.className = 'fudosan-favorite-btn';
   const isFav = favoriteUrls.has(propertyInfo.url);
-  btn.textContent = isFav ? '\u2605' : '\u2606';
-  btn.title = isFav ? 'お気に入りから削除' : 'お気に入りに追加';
+  updateFavoriteButtonState(btn, isFav);
+  btn.title = isFav ? '坪たんから削除' : '坪たんに登録';
   if (isFav) {
     btn.classList.add('fudosan-favorite-btn--active');
   }
@@ -1285,8 +1285,8 @@ function createFavoriteButton(propertyInfo) {
     e.stopPropagation();
     if (favoriteUrls.has(propertyInfo.url)) {
       await removeFavorite(propertyInfo.url);
-      btn.textContent = '\u2606';
-      btn.title = 'お気に入りに追加';
+      updateFavoriteButtonState(btn, false);
+      btn.title = '坪たんに登録';
       btn.classList.remove('fudosan-favorite-btn--active');
     } else {
       await addFavorite({
@@ -1298,13 +1298,21 @@ function createFavoriteButton(propertyInfo) {
         area: propertyInfo.area || null,
         addedAt: new Date().toISOString()
       });
-      btn.textContent = '\u2605';
-      btn.title = 'お気に入りから削除';
+      updateFavoriteButtonState(btn, true);
+      btn.title = '坪たんから削除';
       btn.classList.add('fudosan-favorite-btn--active');
     }
   });
 
   return btn;
+}
+
+function updateFavoriteButtonState(btn, isActive) {
+  btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+  btn.innerHTML = `
+    <span class="fudosan-favorite-icon" aria-hidden="true">${isActive ? '\u2605' : '\u2606'}</span>
+    <span class="fudosan-favorite-label">${isActive ? '登録済み' : '坪たんに登録'}</span>
+  `;
 }
 
 /**

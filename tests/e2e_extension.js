@@ -16,6 +16,7 @@ const path = require('path');
 const { chromium } = require('playwright');
 
 const ROOT_DIR = path.resolve(__dirname, '..');
+const CURRENT_VERSION = JSON.parse(fs.readFileSync(path.join(ROOT_DIR, 'manifest.json'), 'utf8')).version;
 const EXTENSION_FILES = [
   'manifest.json',
   'background.js',
@@ -132,6 +133,9 @@ async function testContentScript(context) {
   const exportButtonText = await page.locator('.fudosan-csv-export-button').innerText();
   assert.match(exportButtonText, /CSVエクスポート/);
 
+  const favoriteButtonText = await page.locator('.fudosan-favorite-btn').innerText();
+  assert.match(favoriteButtonText, /坪たんに登録/);
+
   await page.close();
 }
 
@@ -195,13 +199,22 @@ async function testPopup(context, extensionId) {
   await page.goto(popupUrl);
   await page.waitForSelector('#release-notes-dialog:not([hidden])', { timeout: 10000 });
   const releaseText = await page.locator('#release-notes-body').innerText();
+  assert.match(releaseText, /更新に気づきやすく改善/);
+  assert.match(releaseText, /坪たんに登録/);
   assert.match(releaseText, /お気に入りの価格ウォッチを強化/);
   assert.match(releaseText, /CSVエクスポートを4サイト正式対応/);
 
+  await page.evaluate(() => new Promise((resolve) => {
+    chrome.action.setBadgeText({ text: 'NEW' }, resolve);
+  }));
+
   await page.locator('#release-notes-close').click();
   await page.waitForFunction(() => document.querySelector('#release-notes-dialog')?.hidden, { timeout: 5000 });
+  await page.waitForFunction(() => new Promise((resolve) => {
+    chrome.action.getBadgeText({}, text => resolve(text === ''));
+  }), { timeout: 5000 });
 
-  await setPopupStorage(page, '1.8.0');
+  await setPopupStorage(page, CURRENT_VERSION);
   await page.reload();
   await page.waitForSelector('.favorite-item', { timeout: 10000 });
 
