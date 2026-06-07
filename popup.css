@@ -41,6 +41,19 @@ body {
   font-size: 10px;
   font-weight: 700;
   line-height: 1.3;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.extension-version:hover {
+  border-color: #93c5fd;
+  color: #2563eb;
+}
+
+.extension-version:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
 }
 
 /* Filter Bar */
@@ -100,6 +113,44 @@ body {
   background: #ffffff;
   color: #334155;
   font-size: 12px;
+}
+
+.watch-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 16px;
+  border-bottom: 1px solid #e2e8f0;
+  background: #ffffff;
+}
+
+.watch-action {
+  flex-shrink: 0;
+  padding: 5px 10px;
+  border: 1px solid #cbd5e1;
+  border-radius: 4px;
+  background: #ffffff;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.watch-action:hover {
+  background: #f1f5f9;
+}
+
+.watch-action:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.watch-status {
+  min-width: 0;
+  color: #64748b;
+  font-size: 10px;
+  line-height: 1.4;
 }
 
 .loan-settings {
@@ -264,6 +315,82 @@ body {
   color: #64748b;
 }
 
+.favorite-listing-status {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.4;
+}
+
+.favorite-listing-status--active {
+  background: #dcfce7;
+  color: #166534;
+}
+
+.favorite-listing-status--ended {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.favorite-listing-status--check_failed {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.favorite-price-history {
+  margin-top: 8px;
+  padding: 7px 8px;
+  border: 1px solid #e2e8f0;
+  border-radius: 6px;
+  background: #f8fafc;
+}
+
+.favorite-price-history-summary {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 5px;
+  color: #475569;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.favorite-price-history-diff--up {
+  color: #dc2626;
+}
+
+.favorite-price-history-diff--down {
+  color: #059669;
+}
+
+.favorite-price-history svg {
+  display: block;
+  width: 100%;
+  height: 34px;
+}
+
+.favorite-price-history-line {
+  fill: none;
+  stroke: #2563eb;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.favorite-price-history-base {
+  stroke: #cbd5e1;
+  stroke-width: 1;
+}
+
+.favorite-price-history-point {
+  fill: #ffffff;
+  stroke: #2563eb;
+  stroke-width: 1.5;
+}
+
 .favorite-memo {
   width: 100%;
   min-height: 52px;
@@ -314,4 +441,92 @@ body {
   text-align: center;
   color: #94a3b8;
   font-size: 13px;
+}
+
+.release-notes-dialog {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.release-notes-dialog[hidden] {
+  display: none;
+}
+
+.release-notes-panel {
+  width: 100%;
+  max-height: 440px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 20px 45px rgba(15, 23, 42, 0.24);
+}
+
+.release-notes-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 12px 14px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.release-notes-header h2 {
+  font-size: 14px;
+  font-weight: 800;
+  color: #1e293b;
+}
+
+.release-notes-close {
+  width: 24px;
+  height: 24px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #64748b;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.release-notes-close:hover {
+  background: #f1f5f9;
+  color: #334155;
+}
+
+.release-notes-body {
+  max-height: 380px;
+  overflow-y: auto;
+  padding: 12px 14px 14px;
+}
+
+.release-note {
+  padding-bottom: 12px;
+}
+
+.release-note + .release-note {
+  padding-top: 12px;
+  border-top: 1px solid #e2e8f0;
+}
+
+.release-note-title {
+  margin-bottom: 6px;
+  color: #1e293b;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.release-note-list {
+  padding-left: 18px;
+  color: #475569;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.release-note-list li + li {
+  margin-top: 3px;
 }

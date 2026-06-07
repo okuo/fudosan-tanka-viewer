@@ -1,0 +1,12 @@
+{
+  "name": "fudosan-tanka-viewer",
+  "version": "1.8.0",
+  "private": true,
+  "scripts": {
+    "test": "node --check content.js && node --check popup.js && node --check background.js && node test_csv_export.js && node test_background.js",
+    "test:e2e": "node tests/e2e_extension.js"
+  },
+  "devDependencies": {
+    "playwright": "^1.60.0"
+  }
+}

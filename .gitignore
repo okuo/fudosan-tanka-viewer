@@ -12,6 +12,8 @@ Thumbs.db
 
 # Node modules (if needed in future)
 node_modules/
+playwright-report/
+test-results/
 
 # Build artifacts
 fudosan-tanka-viewer.zip

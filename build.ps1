@@ -13,6 +13,7 @@ New-Item -ItemType Directory -Path "dist" | Out-Null
 # Copy required files
 Write-Host "Copying files..." -ForegroundColor Yellow
 Copy-Item "manifest.json" "dist/"
+Copy-Item "background.js" "dist/"
 Copy-Item "content.js" "dist/"
 Copy-Item "styles.css" "dist/"
 Copy-Item "popup.html" "dist/"

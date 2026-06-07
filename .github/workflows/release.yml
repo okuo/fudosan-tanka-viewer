@@ -26,7 +26,11 @@ jobs:
       - name: Run JavaScript smoke tests
         run: |
           node --check content.js
+          node --check popup.js
+          node --check background.js
+          node --check tests/e2e_extension.js
           node test_csv_export.js
+          node test_background.js
 
       - name: Build zip
         run: bash build.sh

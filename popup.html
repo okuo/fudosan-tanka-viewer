@@ -9,7 +9,7 @@
 <body>
   <div class="popup-header">
     <h1>お気に入り物件</h1>
-    <span id="extension-version" class="extension-version" aria-label="拡張機能バージョン"></span>
+    <button id="extension-version" class="extension-version" type="button" aria-label="リリースノートを表示"></button>
   </div>
 
   <div class="filter-bar">
@@ -29,6 +29,11 @@
       <option value="tsubo_asc">坪単価が安い順</option>
       <option value="updated_desc">価格改定が新しい順</option>
     </select>
+  </div>
+
+  <div class="watch-bar">
+    <button id="recheck-favorites" class="watch-action" type="button">価格を再チェック</button>
+    <span id="recheck-status" class="watch-status" aria-live="polite"></span>
   </div>
 
   <section class="loan-settings" aria-label="住宅ローン条件">
@@ -64,6 +69,16 @@
   <div id="favorites-list" class="favorites-list"></div>
   <div id="empty-message" class="empty-message" style="display: none;">
     お気に入りはまだありません
+  </div>
+
+  <div id="release-notes-dialog" class="release-notes-dialog" role="dialog" aria-modal="true" aria-labelledby="release-notes-title" hidden>
+    <div class="release-notes-panel">
+      <div class="release-notes-header">
+        <h2 id="release-notes-title">更新内容</h2>
+        <button id="release-notes-close" class="release-notes-close" type="button" aria-label="閉じる">×</button>
+      </div>
+      <div id="release-notes-body" class="release-notes-body"></div>
+    </div>
   </div>
 
   <script src="popup.js"></script>

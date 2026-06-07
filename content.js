@@ -1162,6 +1162,11 @@ function addFavorite(data) {
           priceHistory: [],
           priceUpdatedAt: data.price ? now : null,
           lastCheckedAt: now,
+          listingStatus: 'active',
+          listingStatusLabel: '掲載中',
+          listingCheckedAt: now,
+          listingEndedAt: null,
+          recheckError: null,
           ...data
         });
         chrome.storage.local.set({ favorites }, () => {
@@ -1219,7 +1224,12 @@ function syncFavoritePropertyData(propertyInfo) {
         tsubotanka: propertyInfo.tsubotanka || favorite.tsubotanka || null,
         site: favorite.site || SITE_TYPE,
         priceHistory: Array.isArray(favorite.priceHistory) ? favorite.priceHistory : [],
-        lastCheckedAt: now
+        lastCheckedAt: now,
+        listingStatus: 'active',
+        listingStatusLabel: '掲載中',
+        listingCheckedAt: now,
+        listingEndedAt: null,
+        recheckError: null
       };
 
       if (propertyInfo.price && storedCurrentPrice && propertyInfo.price !== storedCurrentPrice) {
