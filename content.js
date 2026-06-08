@@ -341,7 +341,7 @@ function normalizeHighlightSettings(settings = {}) {
  * @param {number} area - 専有面積（㎡）
  * @param {string} buildingFloorsText - 建物階数テキスト（例: "16階建"）
  * @param {string} totalUnitsText - 総戸数テキスト（敷地面積の代替指標）
- * @returns {{ perSqm: number, guideline: number, isAdequate: boolean, label: string }|null}
+ * @returns {{ perSqm: number, guideline: number, isAdequate: boolean, label: string, riskLevel: string, riskLabel: string, ratioPercent: number, riskReason: string }|null}
  */
 function calculateRepairFundPerSqm(repairFundText, area, buildingFloorsText, totalUnitsText) {
   if (!repairFundText || !area || area <= 0) return null;
@@ -384,30 +384,120 @@ function calculateRepairFundPerSqm(repairFundText, area, buildingFloorsText, tot
   }
 
   // 80%未満なら目安以下
-  const isAdequate = perSqm >= guideline * 0.8;
+  const ratio = perSqm / guideline;
+  const ratioPercent = Math.round(ratio * 100);
+  const isAdequate = ratio >= 0.8;
   const label = isAdequate ? '適正水準' : '目安以下（将来値上げリスク）';
+  const riskLevel = ratio >= 1 ? 'low' : ratio >= 0.8 ? 'medium' : 'high';
+  const riskLabel = {
+    low: 'リスク低',
+    medium: 'リスク中',
+    high: 'リスク高'
+  }[riskLevel];
+  const reasonByLevel = {
+    low: '目安以上で、現時点では積立不足リスクは低めです。',
+    medium: '目安の8割以上ですが、将来の値上げ余地は少し見ておきたい水準です。',
+    high: '目安の8割未満で、将来値上げや一時金のリスクに注意が必要です。'
+  };
+  const riskReason = `${guidelineLabel}目安の${ratioPercent}%。${reasonByLevel[riskLevel]}`;
 
-  return { perSqm, guideline, isAdequate, label };
+  return {
+    perSqm,
+    guideline,
+    isAdequate,
+    label,
+    riskLevel,
+    riskLabel,
+    ratioPercent,
+    riskReason
+  };
+}
+
+function createRepairFundRiskSummary(result) {
+  if (!result) return null;
+  return {
+    level: result.riskLevel,
+    label: result.riskLabel,
+    perSqm: result.perSqm,
+    guideline: result.guideline,
+    ratioPercent: result.ratioPercent,
+    reason: result.riskReason
+  };
+}
+
+function extractDetailRepairFundInfo(area) {
+  let repairFundText = '';
+  let buildingFloorsText = '';
+  let totalUnitsText = '';
+  let repairFundRow = null;
+
+  if (['SUUMO', 'REHOUSE', 'ATHOME', 'HOMES'].includes(SITE_TYPE)) {
+    const repairResult = findLabeledValue(document, labelText =>
+      labelText.includes('修繕積立金') && !labelText.includes('基金')
+    );
+    const floorsResult = findLabeledValue(document, labelText =>
+      labelText.includes('建物階数') ||
+      labelText.includes('階建') ||
+      labelText.includes('階数') ||
+      (labelText.includes('所在階') && labelText.includes('構造'))
+    );
+    const unitsResult = findLabeledValue(document, labelText =>
+      labelText.includes('総戸数')
+    );
+
+    if (repairResult) {
+      repairFundText = repairResult.text;
+      repairFundRow = repairResult.row;
+    }
+    if (floorsResult) buildingFloorsText = floorsResult.text;
+    if (unitsResult) totalUnitsText = unitsResult.text;
+
+    const bodyText = document.body.textContent;
+    if (!repairFundText || !extractYenAmount(repairFundText)) {
+      repairFundText = findYenTextInBody('修繕積立金') || repairFundText;
+    }
+    if (!buildingFloorsText) {
+      const floorsMatch = bodyText.match(/(?:地上|RC|SRC|鉄骨鉄筋|鉄筋|鉄骨)?(\d+)階\s*(?:地下\d+階)?建/);
+      if (floorsMatch) buildingFloorsText = floorsMatch[1] + '階建';
+    }
+    if (!totalUnitsText) {
+      const unitsMatch = bodyText.match(/総戸数\s*([0-9,]+戸)/);
+      if (unitsMatch) totalUnitsText = unitsMatch[1];
+    }
+  }
+
+  const result = calculateRepairFundPerSqm(repairFundText, area, buildingFloorsText, totalUnitsText);
+
+  return {
+    repairFundText,
+    buildingFloorsText,
+    totalUnitsText,
+    repairFundRow,
+    result
+  };
 }
 
 /**
  * 修繕積立金の平米単価表示用DOM要素を生成
- * @param {{ perSqm: number, guideline: number, isAdequate: boolean, label: string }} result
+ * @param {{ perSqm: number, guideline: number, isAdequate: boolean, label: string, riskLevel: string, riskLabel: string, ratioPercent: number, riskReason: string }} result
  * @returns {HTMLDivElement}
  */
 function createRepairFundElement(result) {
   const div = document.createElement('div');
   div.className = 'fudosan-unit-price fudosan-repair-fund';
-  const statusClass = result.isAdequate ? 'repair-fund-adequate' : 'repair-fund-warning';
-  const statusIcon = result.isAdequate ? '\u2713' : '\u26A0';
+  const statusClass = `repair-fund-risk repair-fund-risk--${result.riskLevel}`;
+  const statusIcon = result.riskLevel === 'low' ? '\u2713' : '\u26A0';
   div.innerHTML = `
-    <span class="unit-price-label">修繕積立金単価:</span>
-    <span class="unit-price-value repair-fund-value">${result.perSqm.toLocaleString()}円/㎡/月</span>
-    <span class="unit-price-separator">|</span>
-    <a href="https://www.mlit.go.jp/jutakukentiku/house/content/001747009.pdf" target="_blank" rel="noopener" class="unit-price-label repair-fund-link">目安:</a>
-    <span class="unit-price-value">${result.guideline}円/㎡</span>
-    <span class="unit-price-separator">|</span>
-    <span class="${statusClass}">${statusIcon} ${result.label}</span>
+    <div class="repair-fund-main">
+      <span class="unit-price-label">修繕積立金単価:</span>
+      <span class="unit-price-value repair-fund-value">${result.perSqm.toLocaleString()}円/㎡/月</span>
+      <span class="unit-price-separator">|</span>
+      <a href="https://www.mlit.go.jp/jutakukentiku/house/content/001747009.pdf" target="_blank" rel="noopener" class="unit-price-label repair-fund-link">目安:</a>
+      <span class="unit-price-value">${result.guideline}円/㎡</span>
+      <span class="unit-price-separator">|</span>
+      <span class="${statusClass}">${statusIcon} ${result.riskLabel}</span>
+    </div>
+    <div class="repair-fund-reason">${result.riskReason}</div>
   `;
   return div;
 }
@@ -1055,6 +1145,16 @@ function extractFeesFromText(text) {
   };
 }
 
+function extractAgeTextFromProperty(text) {
+  const builtMatch = (text || '').match(/築\s*(\d+)\s*年/);
+  return builtMatch ? `築${builtMatch[1]}年` : '';
+}
+
+function extractStationTextFromProperty(text) {
+  const stationMatch = (text || '').match(/(?:徒歩|歩)\s*(\d+)\s*分/);
+  return stationMatch ? `徒歩${stationMatch[1]}分` : '';
+}
+
 function analyzeListPropertyMetrics(element, price, area, tsuboPrice) {
   const text = element.textContent || '';
   const fees = extractFeesFromText(text);
@@ -1292,6 +1392,12 @@ function syncFavoritePropertyData(propertyInfo) {
         name: propertyInfo.name || favorite.name || '',
         area: propertyInfo.area || favorite.area || null,
         tsubotanka: propertyInfo.tsubotanka || favorite.tsubotanka || null,
+        managementFee: propertyInfo.managementFee ?? favorite.managementFee ?? null,
+        repairFund: propertyInfo.repairFund ?? favorite.repairFund ?? null,
+        repairFundRisk: propertyInfo.repairFundRisk || favorite.repairFundRisk || null,
+        monthlyCost: propertyInfo.monthlyCost ?? favorite.monthlyCost ?? null,
+        age: propertyInfo.age || favorite.age || '',
+        station: propertyInfo.station || favorite.station || '',
         site: favorite.site || SITE_TYPE,
         priceHistory: Array.isArray(favorite.priceHistory) ? favorite.priceHistory : [],
         lastCheckedAt: now,
@@ -1318,6 +1424,12 @@ function syncFavoritePropertyData(propertyInfo) {
         nextFavorite.name !== favorite.name ||
         nextFavorite.area !== favorite.area ||
         nextFavorite.tsubotanka !== favorite.tsubotanka ||
+        nextFavorite.managementFee !== favorite.managementFee ||
+        nextFavorite.repairFund !== favorite.repairFund ||
+        JSON.stringify(nextFavorite.repairFundRisk || null) !== JSON.stringify(favorite.repairFundRisk || null) ||
+        nextFavorite.monthlyCost !== favorite.monthlyCost ||
+        nextFavorite.age !== favorite.age ||
+        nextFavorite.station !== favorite.station ||
         nextFavorite.lastCheckedAt !== favorite.lastCheckedAt
       ) {
         changed = true;
@@ -1706,10 +1818,16 @@ function processProperty(element) {
     unitPriceDiv = createUnavailableElement(isInTable);
   }
 
-  const listFees = extractFeesFromText(element.textContent || '');
+  const propertyText = element.textContent || '';
+  const listFees = extractFeesFromText(propertyText);
+  const listRepairFundResult = listFees.repairFund && area
+    ? calculateRepairFundPerSqm(`${listFees.repairFund}円`, area, '', '')
+    : null;
+  const listMonthlyCost = price && price > 0
+    ? calculateMonthlyCostBreakdown(price, listFees)
+    : null;
   if (price && price > 0) {
-    const monthlyCost = calculateMonthlyCostBreakdown(price, listFees);
-    const monthlyCostDiv = createListMonthlyCostElement(monthlyCost, isInTable);
+    const monthlyCostDiv = createListMonthlyCostElement(listMonthlyCost, isInTable);
     if (monthlyCostDiv) {
       unitPriceDiv.appendChild(monthlyCostDiv);
     }
@@ -1739,7 +1857,13 @@ function processProperty(element) {
       name: extractPropertyName(element),
       price: price,
       tsubotanka: tsuboPrice,
-      area: area
+      area: area,
+      managementFee: listFees.managementFee,
+      repairFund: listFees.repairFund,
+      repairFundRisk: createRepairFundRiskSummary(listRepairFundResult),
+      monthlyCost: listMonthlyCost?.totalMonthly || null,
+      age: extractAgeTextFromProperty(propertyText),
+      station: extractStationTextFromProperty(propertyText)
     };
     const favBtn = createFavoriteButton(favoriteInfo);
     unitPriceDiv.appendChild(favBtn);
@@ -1887,12 +2011,22 @@ function processDetailPage() {
     // 詳細ページのお気に入りボタン用情報
     const detailUrl = window.location.href;
     const detailName = document.querySelector('h1')?.textContent?.trim() || '';
+    const detailFees = extractManagementAndRepairFees();
+    const detailRepairFundInfo = extractDetailRepairFundInfo(detailArea);
+    const detailMonthlyCost = calculateMonthlyCostBreakdown(detailPrice, detailFees);
+    const detailText = document.body.textContent || '';
     const favoriteInfo = {
       url: detailUrl,
       name: detailName,
       price: detailPrice,
       tsubotanka: tsuboPrice,
-      area: detailArea
+      area: detailArea,
+      managementFee: detailFees.managementFee,
+      repairFund: detailFees.repairFund,
+      repairFundRisk: createRepairFundRiskSummary(detailRepairFundInfo.result),
+      monthlyCost: detailMonthlyCost.totalMonthly || null,
+      age: extractAgeTextFromProperty(detailText),
+      station: extractStationTextFromProperty(detailText)
     };
     syncFavoritePropertyData(favoriteInfo);
 
@@ -1996,45 +2130,8 @@ function processDetailPage() {
  * @param {number} area - 専有面積（㎡）
  */
 function displayRepairFundPerSqm(area) {
-  let repairFundText = '';
-  let buildingFloorsText = '';
-  let totalUnitsText = '';
-  let repairFundRow = null; // 修繕積立金の表示行（挿入位置用）
-
-  if (['SUUMO', 'REHOUSE', 'ATHOME', 'HOMES'].includes(SITE_TYPE)) {
-    const repairResult = findLabeledValue(document, labelText =>
-      labelText.includes('修繕積立金') && !labelText.includes('基金')
-    );
-    const floorsResult = findLabeledValue(document, labelText =>
-      labelText.includes('建物階数') ||
-      labelText.includes('階建') ||
-      labelText.includes('階数') ||
-      (labelText.includes('所在階') && labelText.includes('構造'))
-    );
-    const unitsResult = findLabeledValue(document, labelText =>
-      labelText.includes('総戸数')
-    );
-
-    if (repairResult) {
-      repairFundText = repairResult.text;
-      repairFundRow = repairResult.row;
-    }
-    if (floorsResult) buildingFloorsText = floorsResult.text;
-    if (unitsResult) totalUnitsText = unitsResult.text;
-
-    const bodyText = document.body.textContent;
-    if (!repairFundText || !extractYenAmount(repairFundText)) {
-      repairFundText = findYenTextInBody('修繕積立金') || repairFundText;
-    }
-    if (!buildingFloorsText) {
-      const floorsMatch = bodyText.match(/(?:地上|RC|SRC|鉄骨鉄筋|鉄筋|鉄骨)?(\d+)階\s*(?:地下\d+階)?建/);
-      if (floorsMatch) buildingFloorsText = floorsMatch[1] + '階建';
-    }
-    if (!totalUnitsText) {
-      const unitsMatch = bodyText.match(/総戸数\s*([0-9,]+戸)/);
-      if (unitsMatch) totalUnitsText = unitsMatch[1];
-    }
-  }
+  const repairFundInfo = extractDetailRepairFundInfo(area);
+  const { repairFundText, buildingFloorsText, totalUnitsText, repairFundRow, result } = repairFundInfo;
 
   if (!repairFundText) {
     log('修繕積立金が見つかりません');
@@ -2043,13 +2140,12 @@ function displayRepairFundPerSqm(area) {
 
   log('修繕積立金テキスト:', repairFundText, '建物階数:', buildingFloorsText, '総戸数:', totalUnitsText);
 
-  const result = calculateRepairFundPerSqm(repairFundText, area, buildingFloorsText, totalUnitsText);
   if (!result) {
     log('修繕積立金の平米単価計算不可');
     return;
   }
 
-  log('修繕積立金計算結果:', result.perSqm, '円/㎡/月, 目安:', result.guideline, '円/㎡, 判定:', result.label);
+  log('修繕積立金計算結果:', result.perSqm, '円/㎡/月, 目安:', result.guideline, '円/㎡, 判定:', result.riskLabel);
 
   // 既存の修繕積立金平米単価表示を削除
   const existingRepairFund = document.querySelectorAll('.fudosan-repair-fund');

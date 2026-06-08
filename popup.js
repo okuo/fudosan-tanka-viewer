@@ -4,8 +4,11 @@
 
 let currentFilter = 'all';
 let currentSort = 'added_desc';
+let currentView = 'favorites';
+let currentFavorites = [];
 let memoSaveTimer = null;
 let loanSaveTimer = null;
+let checklistSaveTimer = null;
 let favoriteRecheckInProgress = false;
 
 const RELEASE_NOTES_STORAGE_KEY = 'lastSeenReleaseNotesVersion';
@@ -16,7 +19,32 @@ const DEFAULT_LOAN_SETTINGS = {
   downPaymentMan: 0
 };
 
+let currentPopupLoanSettings = { ...DEFAULT_LOAN_SETTINGS };
+
+const VIEWING_CHECKLIST_ITEMS = [
+  { id: 'common_area', label: '共用部' },
+  { id: 'notice_board', label: '掲示板' },
+  { id: 'trash_area', label: 'ゴミ置き場' },
+  { id: 'noise', label: '騒音' },
+  { id: 'sunlight', label: '日当たり' },
+  { id: 'signal', label: '電波' },
+  { id: 'condensation', label: '結露跡' },
+  { id: 'management', label: '管理状態' },
+  { id: 'night_route', label: '夜道' },
+  { id: 'repair_history', label: '修繕履歴' }
+];
+
 const RELEASE_NOTES = [
+  {
+    version: '1.9.0',
+    title: '購入判断を助ける機能を追加',
+    items: [
+      '修繕積立金をリスク低・中・高で診断し、目安比率と理由を表示するようにしました。',
+      'お気に入り物件を価格・坪単価・月額・管理費・修繕積立金で比較できるボードを追加しました。',
+      'お気に入り物件ごとに内見チェックリストと内見メモを保存できるようにしました。',
+      'お気に入りの価格改定をバックグラウンド再チェックで検知したとき、Chrome通知で知らせるようにしました。'
+    ]
+  },
   {
     version: '1.8.2',
     title: '詳細ページの費用取得を改善',
@@ -166,8 +194,23 @@ function setupReleaseNotes() {
  */
 function loadFavorites() {
   chrome.storage.local.get({ favorites: [] }, (result) => {
-    renderFavorites(result.favorites);
+    renderAllViews(result.favorites);
   });
+}
+
+function renderAllViews(favorites) {
+  currentFavorites = Array.isArray(favorites) ? favorites : [];
+  renderFavorites(currentFavorites);
+  renderComparisonBoard(currentFavorites);
+  renderViewingChecklist(currentFavorites);
+}
+
+function getVisibleSortedFavorites(favorites) {
+  const filtered = currentFilter === 'all'
+    ? favorites
+    : favorites.filter(f => f.site === currentFilter);
+
+  return sortFavorites(filtered, currentSort);
 }
 
 /**
@@ -178,11 +221,7 @@ function renderFavorites(favorites) {
   const listEl = document.getElementById('favorites-list');
   const emptyEl = document.getElementById('empty-message');
 
-  const filtered = currentFilter === 'all'
-    ? favorites
-    : favorites.filter(f => f.site === currentFilter);
-
-  const sorted = sortFavorites(filtered, currentSort);
+  const sorted = getVisibleSortedFavorites(favorites);
 
   listEl.innerHTML = '';
 
@@ -253,6 +292,11 @@ function renderFavorites(favorites) {
       info.appendChild(listingStatusEl);
     }
 
+    const repairRiskEl = createFavoriteRepairRiskElement(fav);
+    if (repairRiskEl) {
+      info.appendChild(repairRiskEl);
+    }
+
     const priceHistoryEl = createPriceHistoryElement(fav);
     if (priceHistoryEl) {
       info.appendChild(priceHistoryEl);
@@ -269,6 +313,20 @@ function renderFavorites(favorites) {
       }, 250);
     });
     info.appendChild(memoEl);
+
+    const actionRow = document.createElement('div');
+    actionRow.className = 'favorite-actions';
+
+    const checklistBtn = document.createElement('button');
+    checklistBtn.className = 'favorite-secondary-action';
+    checklistBtn.type = 'button';
+    checklistBtn.textContent = '内見';
+    checklistBtn.addEventListener('click', () => {
+      switchPopupView('checklist');
+    });
+    actionRow.appendChild(checklistBtn);
+
+    info.appendChild(actionRow);
 
     item.appendChild(info);
 
@@ -324,6 +382,244 @@ function createListingStatusElement(fav) {
     el.title = fav.recheckError;
   }
   return el;
+}
+
+function createFavoriteRepairRiskElement(fav) {
+  const risk = fav.repairFundRisk;
+  if (!risk || !risk.label) return null;
+
+  const el = document.createElement('div');
+  el.className = `favorite-repair-risk favorite-repair-risk--${risk.level || 'unknown'}`;
+  const perSqm = risk.perSqm ? `${risk.perSqm.toLocaleString()}円/㎡` : '';
+  const ratio = risk.ratioPercent ? `目安比${risk.ratioPercent}%` : '';
+  el.textContent = ['修繕積立金', risk.label, perSqm, ratio].filter(Boolean).join(' / ');
+  if (risk.reason) el.title = risk.reason;
+  return el;
+}
+
+function calculateMonthlyLoanPaymentForPopup(principal, annualRate, years) {
+  if (principal <= 0 || years <= 0) return 0;
+  if (annualRate <= 0) {
+    return Math.round(principal / (years * 12));
+  }
+  const monthlyRate = annualRate / 12;
+  const totalMonths = years * 12;
+  const factor = Math.pow(1 + monthlyRate, totalMonths);
+  return Math.round(principal * monthlyRate * factor / (factor - 1));
+}
+
+function calculateFavoriteMonthlyCost(fav) {
+  const priceMan = fav.currentPrice || fav.price || 0;
+  if (!priceMan) return null;
+
+  const borrowingMan = Math.max(0, priceMan - currentPopupLoanSettings.downPaymentMan);
+  const loanMonthly = calculateMonthlyLoanPaymentForPopup(
+    borrowingMan * 10000,
+    currentPopupLoanSettings.annualRatePercent / 100,
+    currentPopupLoanSettings.years
+  );
+
+  const managementFee = Number(fav.managementFee) || 0;
+  const repairFund = Number(fav.repairFund) || 0;
+
+  return {
+    loanMonthly,
+    managementFee,
+    repairFund,
+    totalMonthly: loanMonthly + managementFee + repairFund
+  };
+}
+
+function formatYen(amount) {
+  if (!amount) return '';
+  return `${amount.toLocaleString()}円`;
+}
+
+function formatMonthlyCost(amount) {
+  if (!amount) return '';
+  if (amount >= 10000) {
+    return `約${(Math.round(amount / 1000) / 10).toLocaleString()}万円`;
+  }
+  return `約${amount.toLocaleString()}円`;
+}
+
+function appendTextCell(row, text, className = '') {
+  const cell = document.createElement('td');
+  if (className) cell.className = className;
+  cell.textContent = text || '-';
+  row.appendChild(cell);
+  return cell;
+}
+
+function renderComparisonBoard(favorites) {
+  const boardEl = document.getElementById('compare-board');
+  const emptyEl = document.getElementById('compare-empty-message');
+  if (!boardEl || !emptyEl) return;
+
+  const sorted = getVisibleSortedFavorites(favorites);
+  boardEl.innerHTML = '';
+
+  if (sorted.length === 0) {
+    boardEl.style.display = 'none';
+    emptyEl.style.display = 'block';
+    return;
+  }
+
+  boardEl.style.display = 'block';
+  emptyEl.style.display = 'none';
+
+  const tableWrap = document.createElement('div');
+  tableWrap.className = 'compare-table-wrap';
+
+  const table = document.createElement('table');
+  table.className = 'compare-table';
+
+  const thead = document.createElement('thead');
+  const headerRow = document.createElement('tr');
+  ['物件', '価格', '坪単価', '月額', '管理費', '修繕積立金', '診断', '築年数', '駅距離'].forEach((label) => {
+    const th = document.createElement('th');
+    th.textContent = label;
+    headerRow.appendChild(th);
+  });
+  thead.appendChild(headerRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement('tbody');
+  sorted.forEach((fav) => {
+    const row = document.createElement('tr');
+    const nameCell = document.createElement('td');
+    nameCell.className = 'compare-property-cell';
+
+    const nameLink = document.createElement('a');
+    nameLink.href = fav.url;
+    nameLink.target = '_blank';
+    nameLink.rel = 'noopener';
+    nameLink.textContent = fav.name || '(物件名不明)';
+    nameCell.appendChild(nameLink);
+    row.appendChild(nameCell);
+
+    const monthlyCost = calculateFavoriteMonthlyCost(fav);
+    const risk = fav.repairFundRisk;
+
+    appendTextCell(row, formatPrice(fav.currentPrice || fav.price));
+    appendTextCell(row, fav.tsubotanka ? `${fav.tsubotanka.toLocaleString()}万/坪` : '');
+    appendTextCell(row, monthlyCost ? formatMonthlyCost(monthlyCost.totalMonthly) : '');
+    appendTextCell(row, formatYen(Number(fav.managementFee) || 0));
+    appendTextCell(row, formatYen(Number(fav.repairFund) || 0));
+
+    const riskCell = appendTextCell(row, risk?.label || '', risk ? `compare-risk compare-risk--${risk.level}` : '');
+    if (risk?.reason) riskCell.title = risk.reason;
+
+    appendTextCell(row, fav.age || '');
+    appendTextCell(row, fav.station || '');
+    tbody.appendChild(row);
+  });
+
+  table.appendChild(tbody);
+  tableWrap.appendChild(table);
+  boardEl.appendChild(tableWrap);
+}
+
+function getViewingChecklistState(fav) {
+  return fav.viewingChecklist && typeof fav.viewingChecklist === 'object'
+    ? fav.viewingChecklist
+    : {};
+}
+
+function getViewingChecklistProgress(fav) {
+  const state = getViewingChecklistState(fav);
+  const completed = VIEWING_CHECKLIST_ITEMS.filter(item => state[item.id]).length;
+  return { completed, total: VIEWING_CHECKLIST_ITEMS.length };
+}
+
+function renderViewingChecklist(favorites) {
+  const listEl = document.getElementById('checklist-list');
+  const emptyEl = document.getElementById('checklist-empty-message');
+  if (!listEl || !emptyEl) return;
+
+  const sorted = getVisibleSortedFavorites(favorites);
+  listEl.innerHTML = '';
+
+  if (sorted.length === 0) {
+    listEl.style.display = 'none';
+    emptyEl.style.display = 'block';
+    return;
+  }
+
+  listEl.style.display = 'block';
+  emptyEl.style.display = 'none';
+
+  sorted.forEach((fav, favIndex) => {
+    const section = document.createElement('section');
+    section.className = 'checklist-card';
+
+    const header = document.createElement('div');
+    header.className = 'checklist-card-header';
+
+    const nameLink = document.createElement('a');
+    nameLink.className = 'checklist-property-name';
+    nameLink.href = fav.url;
+    nameLink.target = '_blank';
+    nameLink.rel = 'noopener';
+    nameLink.textContent = fav.name || '(物件名不明)';
+    header.appendChild(nameLink);
+
+    const progress = getViewingChecklistProgress(fav);
+    const progressEl = document.createElement('span');
+    progressEl.className = 'checklist-progress';
+    progressEl.textContent = `${progress.completed}/${progress.total}`;
+    header.appendChild(progressEl);
+    section.appendChild(header);
+
+    const detailRow = document.createElement('div');
+    detailRow.className = 'checklist-card-details';
+    [formatPrice(fav.currentPrice || fav.price), fav.tsubotanka ? `${fav.tsubotanka.toLocaleString()}万/坪` : '', fav.station || '']
+      .filter(Boolean)
+      .forEach((text) => {
+        const span = document.createElement('span');
+        span.textContent = text;
+        detailRow.appendChild(span);
+      });
+    section.appendChild(detailRow);
+
+    const state = getViewingChecklistState(fav);
+    const grid = document.createElement('div');
+    grid.className = 'checklist-grid';
+
+    VIEWING_CHECKLIST_ITEMS.forEach((item) => {
+      const label = document.createElement('label');
+      label.className = 'checklist-item';
+
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.checked = Boolean(state[item.id]);
+      checkbox.id = `checklist-${favIndex}-${item.id}`;
+      checkbox.addEventListener('change', () => {
+        updateFavoriteChecklistItem(fav.url, item.id, checkbox.checked);
+      });
+      label.appendChild(checkbox);
+
+      const span = document.createElement('span');
+      span.textContent = item.label;
+      label.appendChild(span);
+      grid.appendChild(label);
+    });
+    section.appendChild(grid);
+
+    const note = document.createElement('textarea');
+    note.className = 'checklist-note';
+    note.placeholder = '内見メモ';
+    note.value = fav.viewingNote || '';
+    note.addEventListener('input', () => {
+      window.clearTimeout(checklistSaveTimer);
+      checklistSaveTimer = window.setTimeout(() => {
+        updateFavoriteViewingNote(fav.url, note.value);
+      }, 250);
+    });
+    section.appendChild(note);
+
+    listEl.appendChild(section);
+  });
 }
 
 function buildPriceHistoryPoints(fav) {
@@ -456,7 +752,7 @@ function removeFavorite(url) {
   chrome.storage.local.get({ favorites: [] }, (result) => {
     const favorites = result.favorites.filter(f => f.url !== url);
     chrome.storage.local.set({ favorites }, () => {
-      renderFavorites(favorites);
+      renderAllViews(favorites);
     });
   });
 }
@@ -468,6 +764,39 @@ function updateFavoriteMemo(url, memo) {
       return {
         ...favorite,
         memo,
+        updatedAt: new Date().toISOString()
+      };
+    });
+
+    chrome.storage.local.set({ favorites });
+  });
+}
+
+function updateFavoriteChecklistItem(url, itemId, checked) {
+  chrome.storage.local.get({ favorites: [] }, (result) => {
+    const favorites = result.favorites.map((favorite) => {
+      if (favorite.url !== url) return favorite;
+      return {
+        ...favorite,
+        viewingChecklist: {
+          ...(favorite.viewingChecklist || {}),
+          [itemId]: checked
+        },
+        updatedAt: new Date().toISOString()
+      };
+    });
+
+    chrome.storage.local.set({ favorites });
+  });
+}
+
+function updateFavoriteViewingNote(url, viewingNote) {
+  chrome.storage.local.get({ favorites: [] }, (result) => {
+    const favorites = result.favorites.map((favorite) => {
+      if (favorite.url !== url) return favorite;
+      return {
+        ...favorite,
+        viewingNote,
         updatedAt: new Date().toISOString()
       };
     });
@@ -497,6 +826,7 @@ function getSiteDisplayName(site) {
  * @returns {string}
  */
 function formatPrice(price) {
+  if (!price) return '';
   if (price >= 10000) {
     const oku = Math.floor(price / 10000);
     const man = price % 10000;
@@ -537,15 +867,17 @@ function loadLoanSettings() {
 }
 
 function renderLoanSettings(settings) {
+  currentPopupLoanSettings = normalizeLoanSettings(settings);
   const rateInput = document.getElementById('loan-rate');
   const yearsInput = document.getElementById('loan-years');
   const downPaymentInput = document.getElementById('loan-down-payment');
 
   if (!rateInput || !yearsInput || !downPaymentInput) return;
 
-  rateInput.value = settings.annualRatePercent;
-  yearsInput.value = settings.years;
-  downPaymentInput.value = settings.downPaymentMan;
+  rateInput.value = currentPopupLoanSettings.annualRatePercent;
+  yearsInput.value = currentPopupLoanSettings.years;
+  downPaymentInput.value = currentPopupLoanSettings.downPaymentMan;
+  renderComparisonBoard(currentFavorites);
 }
 
 function saveLoanSettingsFromInputs() {
@@ -656,25 +988,49 @@ function setupFavoriteRecheck() {
   button.addEventListener('click', requestFavoriteRecheck);
 }
 
+function switchPopupView(viewName) {
+  currentView = viewName;
+
+  document.querySelectorAll('.view-tab').forEach((tab) => {
+    const isActive = tab.dataset.view === viewName;
+    tab.classList.toggle('active', isActive);
+    tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
+  });
+
+  document.querySelectorAll('.popup-view').forEach((view) => {
+    view.hidden = view.id !== `${viewName}-view`;
+  });
+
+  renderAllViews(currentFavorites);
+}
+
+function setupViewTabs() {
+  document.querySelectorAll('.view-tab').forEach((tab) => {
+    tab.addEventListener('click', () => {
+      switchPopupView(tab.dataset.view);
+    });
+  });
+}
+
 document.querySelectorAll('.filter-btn').forEach((btn) => {
   btn.addEventListener('click', () => {
     document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
     currentFilter = btn.dataset.site;
-    loadFavorites();
+    renderAllViews(currentFavorites);
   });
 });
 
 document.getElementById('sort-select').addEventListener('change', (event) => {
   currentSort = event.target.value;
-  loadFavorites();
+  renderAllViews(currentFavorites);
 });
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== 'local') return;
 
   if (changes.favorites) {
-    renderFavorites(changes.favorites.newValue || []);
+    renderAllViews(changes.favorites.newValue || []);
   }
 
   if (changes.loanSettings) {
@@ -684,6 +1040,7 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
 
 renderExtensionVersion();
 setupReleaseNotes();
+setupViewTabs();
 setupFavoriteRecheck();
 setupLoanSettings();
 loadFavorites();

@@ -87,6 +87,24 @@
 .fudosan-repair-fund {
   border-left-color: #059669;
   background: #ecfdf5;
+  display: block;
+  max-width: fit-content;
+  white-space: normal;
+}
+
+.repair-fund-main {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0;
+}
+
+.repair-fund-reason {
+  margin-top: 4px;
+  color: #475569;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.45;
 }
 
 .repair-fund-adequate {
@@ -98,6 +116,23 @@
 .repair-fund-warning {
   font-size: 12px;
   font-weight: 600;
+  color: #dc2626;
+}
+
+.repair-fund-risk {
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.repair-fund-risk--low {
+  color: #059669;
+}
+
+.repair-fund-risk--medium {
+  color: #d97706;
+}
+
+.repair-fund-risk--high {
   color: #dc2626;
 }
 

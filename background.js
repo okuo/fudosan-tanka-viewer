@@ -10,6 +10,7 @@ const FAVORITE_RECHECK_DELAY_MS = 2000;
 const RELEASE_NOTES_STORAGE_KEY = 'lastSeenReleaseNotesVersion';
 const RELEASE_NOTES_BADGE_VERSION_KEY = 'pendingReleaseNotesBadgeVersion';
 const RELEASE_NOTES_BADGE_TEXT = 'NEW';
+const PRICE_NOTIFICATION_TARGETS_KEY = 'priceChangeNotificationTargets';
 
 const LISTING_ENDED_PATTERNS = [
   /掲載(?:が)?終了/,
@@ -140,6 +141,79 @@ function parseFirstPriceMan(text) {
 
   const manPrice = normalized.match(/((?:\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s*万円)/);
   return manPrice ? parsePriceMan(manPrice[1]) : null;
+}
+
+function formatPriceMan(price) {
+  if (!price) return '';
+  if (price >= 10000) {
+    const oku = Math.floor(price / 10000);
+    const man = price % 10000;
+    return man === 0 ? `${oku}億円` : `${oku}億${man.toLocaleString()}万円`;
+  }
+  return `${price.toLocaleString()}万円`;
+}
+
+function formatSignedMan(diff) {
+  return `${diff > 0 ? '+' : ''}${diff.toLocaleString()}万円`;
+}
+
+function didFavoritePriceChange(previousFavorite, nextFavorite) {
+  const previousPrice = previousFavorite?.currentPrice || previousFavorite?.price || null;
+  const currentPrice = nextFavorite?.currentPrice || nextFavorite?.price || null;
+  return Boolean(previousPrice && currentPrice && previousPrice !== currentPrice);
+}
+
+function buildPriceChangeNotificationMessage(favorite) {
+  const previousPrice = favorite.previousPrice;
+  const currentPrice = favorite.currentPrice || favorite.price;
+  const diff = currentPrice - previousPrice;
+  const movement = diff > 0 ? '値上げ' : '値下げ';
+  const name = favorite.name || 'お気に入り物件';
+
+  return {
+    title: '坪たん: 価格改定',
+    message: `${name}が ${formatPriceMan(previousPrice)} → ${formatPriceMan(currentPrice)} に${movement}されました (${formatSignedMan(diff)})`
+  };
+}
+
+async function rememberPriceChangeNotificationTarget(notificationId, url) {
+  if (!notificationId || !url) return;
+
+  const result = await getStorageData({ [PRICE_NOTIFICATION_TARGETS_KEY]: {} });
+  const currentTargets = result[PRICE_NOTIFICATION_TARGETS_KEY] || {};
+  const entries = Object.entries(currentTargets)
+    .filter(([id]) => id !== notificationId)
+    .slice(-19);
+  const nextTargets = Object.fromEntries([...entries, [notificationId, url]]);
+  await setStorageData({ [PRICE_NOTIFICATION_TARGETS_KEY]: nextTargets });
+}
+
+function createChromeNotification(notificationId, options) {
+  return new Promise((resolve) => {
+    chrome.notifications.create(notificationId, options, () => {
+      if (chrome.runtime.lastError) {
+        console.warn('価格改定通知の表示に失敗しました', chrome.runtime.lastError.message);
+      }
+      resolve();
+    });
+  });
+}
+
+async function notifyFavoritePriceChange(favorite) {
+  if (!chrome.notifications?.create || !favorite?.previousPrice || !(favorite.currentPrice || favorite.price)) {
+    return;
+  }
+
+  const notificationId = `price-change-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const { title, message } = buildPriceChangeNotificationMessage(favorite);
+  await rememberPriceChangeNotificationTarget(notificationId, favorite.url);
+  await createChromeNotification(notificationId, {
+    type: 'basic',
+    iconUrl: 'icons/icon128.png',
+    title,
+    message,
+    priority: 1
+  });
 }
 
 function extractPriceFromHtml(html) {
@@ -345,10 +419,14 @@ async function recheckFavorites(options = {}) {
     const checkedAt = new Date().toISOString();
     const recheckResult = await fetchFavoriteRecheckResult(favorite);
     const nextFavorite = mergeFavoriteRecheckResult(favorite, recheckResult, checkedAt);
+    const priceChanged = didFavoritePriceChange(favorite, nextFavorite);
 
     if (JSON.stringify(nextFavorite) !== JSON.stringify(favorite)) changed += 1;
     if (nextFavorite.listingStatus === 'ended') ended += 1;
     if (nextFavorite.listingStatus === 'check_failed') failed += 1;
+    if (priceChanged) {
+      await notifyFavoritePriceChange(nextFavorite);
+    }
 
     nextByUrl.set(favorite.url, nextFavorite);
 
@@ -421,17 +499,31 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onInstalled) {
 
     return true;
   });
+
+  chrome.notifications?.onClicked?.addListener((notificationId) => {
+    getStorageData({ [PRICE_NOTIFICATION_TARGETS_KEY]: {} })
+      .then((result) => {
+        const url = result[PRICE_NOTIFICATION_TARGETS_KEY]?.[notificationId];
+        if (url) chrome.tabs?.create?.({ url });
+        chrome.notifications?.clear?.(notificationId);
+      })
+      .catch(error => console.warn('価格改定通知の遷移に失敗しました', error));
+  });
 }
 
 if (typeof module !== 'undefined') {
   module.exports = {
     parsePriceMan,
+    formatPriceMan,
+    formatSignedMan,
     extractPriceFromHtml,
     stripHtmlForText,
     detectListingStatus,
     buildNextPriceHistory,
     mergeFavoriteRecheckResult,
     shouldRecheckFavorite,
-    getFavoriteRecheckTime
+    getFavoriteRecheckTime,
+    didFavoritePriceChange,
+    buildPriceChangeNotificationMessage
   };
 }

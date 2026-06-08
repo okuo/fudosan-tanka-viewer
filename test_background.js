@@ -10,7 +10,9 @@ const {
   extractPriceFromHtml,
   detectListingStatus,
   mergeFavoriteRecheckResult,
-  shouldRecheckFavorite
+  shouldRecheckFavorite,
+  didFavoritePriceChange,
+  buildPriceChangeNotificationMessage
 } = require('./background.js');
 
 assert.equal(parsePriceMan('2億5990万円'), 25990);
@@ -65,6 +67,15 @@ assert.equal(changed.previousPrice, 10000);
 assert.equal(changed.priceHistory.length, 1);
 assert.equal(changed.priceHistory[0].diff, -500);
 assert.equal(changed.listingStatus, 'active');
+assert.equal(didFavoritePriceChange(favorite, changed), true);
+
+assert.deepEqual(
+  buildPriceChangeNotificationMessage(changed),
+  {
+    title: '坪たん: 価格改定',
+    message: 'テスト物件が 1億円 → 9,500万円 に値下げされました (-500万円)'
+  }
+);
 
 const ended = mergeFavoriteRecheckResult(changed, {
   listingStatus: 'ended',
