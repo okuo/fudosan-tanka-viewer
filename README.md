@@ -138,6 +138,7 @@ fudosan-tanka-viewer/
 ├── popup.js               # ポップアップロジック
 ├── popup.css              # ポップアップスタイル
 ├── icons/                 # アイコン画像
+├── scripts/               # npmなし環境向けテストスクリプト
 ├── CLAUDE.md             # 開発者向けドキュメント
 ├── AGENTS.md             # Codex向け開発者ドキュメント
 └── README.md             # このファイル
@@ -168,14 +169,22 @@ fudosan-tanka-viewer/
 npm test
 ```
 
+Codexなど `npm` がPATHにない環境:
+
+```bash
+bash scripts/test.sh
+```
+
 個別に実行する場合:
 
 ```bash
 node --check content.js
 node --check popup.js
 node --check background.js
+node --check tests/e2e_extension.js
 node test_csv_export.js
 node test_background.js
+git diff --check
 ```
 
 Chrome拡張として読み込むE2Eテスト:
@@ -186,12 +195,19 @@ npx playwright install chromium
 npm run test:e2e
 ```
 
+Codexなど `npm` がPATHにない環境:
+
+```bash
+bash scripts/test-e2e.sh
+```
+
 `test:e2e` は一時プロファイルの Chromium / Chrome for Testing に拡張機能を読み込みます。普段使いのChromeプロファイルは変更しません。実サイトへの通信を避けるため、対応サイトURLへのアクセスはPlaywright内でHTMLフィクスチャに差し替えます。
 
 Chromiumの場所を明示する場合:
 
 ```bash
 CHROME_PATH="/path/to/Chromium or Chrome for Testing" npm run test:e2e
+CHROME_PATH="/path/to/Chromium or Chrome for Testing" bash scripts/test-e2e.sh
 ```
 
 通常のGoogle Chrome安定版は自動拡張ロード用フラグの一部が制限されることがあります。ローカルで実際のChromeプロファイルに読み込んだ拡張を確認したい場合は、Chrome拡張を手動で読み込んだうえで、CodexのChrome操作からタブ・ポップアップの手動相当テストを行うのが向いています。

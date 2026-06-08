@@ -112,6 +112,124 @@ function buildSuumoFixture() {
 </html>`;
 }
 
+function buildRehouseDetailFixture() {
+  return `<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>REHOUSE E2E fixture</title>
+</head>
+<body>
+  <main class="property-detail">
+    <div class="property-detail-information">
+      <div class="building-else-price-info">
+        <h1>リハウステストタワー</h1>
+        <div class="building-content">
+          <div class="building-info">3LDK/100.00㎡(約30.25坪)</div>
+        </div>
+      </div>
+      <div class="building-price-info">
+        <p class="text-price-regular price-size"><span class="amount">10,000</span><span class="unit">万円</span></p>
+      </div>
+    </div>
+    <section class="property-detail-infos">
+      <table>
+        <tbody>
+          <tr class="table-row"><td class="table-header label">価格</td><td class="table-data content">10,000万円</td></tr>
+          <tr class="table-row"><td class="table-header label">管理費等</td><td class="table-data content"><span>33,900円</span></td></tr>
+          <tr class="table-row"><td class="table-header label">修繕積立金</td><td class="table-data content"><span>30,500円</span></td></tr>
+          <tr class="table-row"><td class="table-header label">専有面積</td><td class="table-data content">100.00㎡(約30.25坪)</td></tr>
+          <tr class="table-row"><td class="table-header label">階数 / 階建</td><td class="table-data content">20階 / 地上32階 地下2階建</td></tr>
+          <tr class="table-row"><td class="table-header label">総戸数</td><td class="table-data content">387戸</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>`;
+}
+
+function buildAthomeDetailFixture() {
+  return `<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>ATHOME E2E fixture</title>
+</head>
+<body>
+  <main>
+    <h1>アットホームテストレジデンス</h1>
+    <section class="property-outline">
+      <table>
+        <tbody>
+          <tr><td class="label">価格</td><td class="value">7,620万円</td></tr>
+          <tr><td class="label">専有面積</td><td class="value">45.00m²（壁芯）</td></tr>
+          <tr><td class="label">管理費</td><td class="value">12,000円/月</td></tr>
+          <tr><td class="label">修繕積立金</td><td class="value">9,000円/月</td></tr>
+          <tr><td class="label">階建</td><td class="value">14階建</td></tr>
+          <tr><td class="label">総戸数</td><td class="value">120戸</td></tr>
+        </tbody>
+      </table>
+    </section>
+  </main>
+</body>
+</html>`;
+}
+
+function buildHomesDetailFixture() {
+  return `<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <title>HOMES E2E fixture</title>
+</head>
+<body>
+  <main>
+    <h1 class="heading">
+      <span id="chk-bkh-name">HOMESテストタワー</span>
+      <span id="chk-bkh-room">12階</span>
+    </h1>
+    <div class="mod-detailTopSale">
+      <div class="line">
+        <dl>
+          <dt>価格</dt>
+          <dd>8,880万円</dd>
+        </dl>
+      </div>
+      <div class="line">
+        <dl>
+          <dt>専有面積</dt>
+          <dd id="chk-bkc-housearea">75.80m² (壁心)</dd>
+        </dl>
+      </div>
+      <div class="line">
+        <dl>
+          <dt>管理費</dt>
+          <dd>19,800円/月</dd>
+        </dl>
+      </div>
+      <div class="line">
+        <dl>
+          <dt>修繕積立金</dt>
+          <dd>15,160円/月</dd>
+        </dl>
+      </div>
+    </div>
+    <div class="mod-bukkenSpecDetail">
+      <table>
+        <tbody>
+          <tr>
+            <th>総戸数</th><td id="chk-bkd-allunit">1822戸</td>
+            <th>所在階 / 階数</th><td id="chk-bkd-housekai">12階 / 14階建 (地下1階)</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </main>
+</body>
+</html>`;
+}
+
 async function testContentScript(context) {
   await context.route('https://suumo.jp/**', route => {
     route.fulfill({
@@ -135,6 +253,88 @@ async function testContentScript(context) {
 
   const favoriteButtonText = await page.locator('.fudosan-favorite-btn').innerText();
   assert.match(favoriteButtonText, /坪たんに登録/);
+
+  await page.close();
+}
+
+async function testRehouseDetailPage(context) {
+  await context.route('https://www.rehouse.co.jp/**', route => {
+    route.fulfill({
+      status: 200,
+      contentType: 'text/html; charset=utf-8',
+      body: buildRehouseDetailFixture()
+    });
+  });
+
+  const page = await context.newPage();
+  await page.goto('https://www.rehouse.co.jp/buy/mansion/bkdetail/F1FAGA2C/');
+  await page.waitForSelector('.fudosan-repair-fund', { timeout: 10000 });
+  await page.waitForSelector('.fudosan-monthly-cost', { timeout: 10000 });
+
+  const repairText = await page.locator('.fudosan-repair-fund').innerText();
+  assert.match(repairText, /修繕積立金単価/);
+  assert.match(repairText, /305円\/㎡\/月/);
+  assert.match(repairText, /338円\/㎡/);
+
+  const monthlyText = await page.locator('.fudosan-monthly-cost').innerText();
+  assert.match(monthlyText, /管理費 33,900円/);
+  assert.match(monthlyText, /修繕 30,500円/);
+
+  await page.close();
+}
+
+async function testAthomeDetailPage(context) {
+  await context.route('https://www.athome.co.jp/**', route => {
+    route.fulfill({
+      status: 200,
+      contentType: 'text/html; charset=utf-8',
+      body: buildAthomeDetailFixture()
+    });
+  });
+
+  const page = await context.newPage();
+  await page.goto('https://www.athome.co.jp/mansion/1234567890/');
+  await page.waitForSelector('.fudosan-repair-fund', { timeout: 10000 });
+  await page.waitForSelector('.fudosan-monthly-cost', { timeout: 10000 });
+
+  const unitText = await page.locator('.fudosan-unit-price:not(.fudosan-repair-fund)').first().innerText();
+  assert.match(unitText, /坪単価/);
+
+  const repairText = await page.locator('.fudosan-repair-fund').innerText();
+  assert.match(repairText, /修繕積立金単価/);
+  assert.match(repairText, /200円\/㎡\/月/);
+
+  const monthlyText = await page.locator('.fudosan-monthly-cost').innerText();
+  assert.match(monthlyText, /管理費 12,000円/);
+  assert.match(monthlyText, /修繕 9,000円/);
+
+  await page.close();
+}
+
+async function testHomesDetailPage(context) {
+  await context.route('https://www.homes.co.jp/**', route => {
+    route.fulfill({
+      status: 200,
+      contentType: 'text/html; charset=utf-8',
+      body: buildHomesDetailFixture()
+    });
+  });
+
+  const page = await context.newPage();
+  await page.goto('https://www.homes.co.jp/mansion/b-1193620002052/');
+  await page.waitForSelector('.fudosan-repair-fund', { timeout: 10000 });
+  await page.waitForSelector('.fudosan-monthly-cost', { timeout: 10000 });
+
+  const unitText = await page.locator('.fudosan-unit-price:not(.fudosan-repair-fund)').first().innerText();
+  assert.match(unitText, /坪単価/);
+
+  const repairText = await page.locator('.fudosan-repair-fund').innerText();
+  assert.match(repairText, /修繕積立金単価/);
+  assert.match(repairText, /200円\/㎡\/月/);
+
+  const monthlyText = await page.locator('.fudosan-monthly-cost').innerText();
+  assert.match(monthlyText, /管理費 19,800円/);
+  assert.match(monthlyText, /修繕 15,160円/);
 
   await page.close();
 }
@@ -199,6 +399,8 @@ async function testPopup(context, extensionId) {
   await page.goto(popupUrl);
   await page.waitForSelector('#release-notes-dialog:not([hidden])', { timeout: 10000 });
   const releaseText = await page.locator('#release-notes-body').innerText();
+  assert.match(releaseText, /詳細ページの費用取得を改善/);
+  assert.match(releaseText, /三井のリハウスで管理費・修繕積立金/);
   assert.match(releaseText, /更新に気づきやすく改善/);
   assert.match(releaseText, /坪たんに登録/);
   assert.match(releaseText, /お気に入りの価格ウォッチを強化/);
@@ -260,6 +462,9 @@ async function main() {
     const extensionId = await getExtensionId(context);
 
     await testContentScript(context);
+    await testRehouseDetailPage(context);
+    await testAthomeDetailPage(context);
+    await testHomesDetailPage(context);
     await testPopup(context, extensionId);
 
     console.log('extension E2E tests passed');

@@ -177,6 +177,117 @@ function extractYenAmount(text) {
   return null;
 }
 
+function normalizeTableText(text) {
+  return (text || '').replace(/\s+/g, ' ').trim();
+}
+
+function normalizeTableLabel(text) {
+  return normalizeTableText(text).replace(/\s/g, '');
+}
+
+function matchesPropertyPriceLabel(labelText) {
+  return labelText.includes('価格') &&
+    !labelText.includes('価格帯') &&
+    !labelText.includes('最多価格帯');
+}
+
+function getRowCells(row) {
+  return Array.from(row.children || []).filter(cell => cell.tagName === 'TH' || cell.tagName === 'TD');
+}
+
+function findTableValueByLabel(root, matchesLabel) {
+  if (!root) return null;
+
+  const rows = root.querySelectorAll('tr');
+  for (const row of rows) {
+    const cells = getRowCells(row);
+    for (let i = 0; i < cells.length - 1; i++) {
+      const labelText = normalizeTableLabel(cells[i].textContent);
+      if (!matchesLabel(labelText)) continue;
+
+      const valueCell = cells[i + 1];
+      const valueText = normalizeTableText(valueCell.textContent);
+      if (!valueText) continue;
+
+      return {
+        text: valueText,
+        row,
+        labelCell: cells[i],
+        valueCell
+      };
+    }
+  }
+
+  return null;
+}
+
+function findDefinitionValueByLabel(root, matchesLabel) {
+  if (!root) return null;
+
+  const labels = root.querySelectorAll('dt');
+  for (const label of labels) {
+    const labelText = normalizeTableLabel(label.textContent);
+    if (!matchesLabel(labelText)) continue;
+
+    const valueElement = label.nextElementSibling;
+    if (!valueElement || valueElement.tagName !== 'DD') continue;
+
+    const valueText = normalizeTableText(valueElement.textContent);
+    if (!valueText) continue;
+
+    return {
+      text: valueText,
+      row: label.closest('dl') || label.parentElement,
+      labelCell: label,
+      valueCell: valueElement
+    };
+  }
+
+  return null;
+}
+
+function findLabeledValue(root, matchesLabel) {
+  return findTableValueByLabel(root, matchesLabel) || findDefinitionValueByLabel(root, matchesLabel);
+}
+
+function walkLabeledValues(root, callback) {
+  if (!root) return;
+
+  const rows = root.querySelectorAll('tr');
+  for (const row of rows) {
+    const cells = getRowCells(row);
+    for (let i = 0; i < cells.length - 1; i++) {
+      const labelText = normalizeTableLabel(cells[i].textContent);
+      const valueText = normalizeTableText(cells[i + 1].textContent);
+      if (!labelText || !valueText) continue;
+      callback({ labelText, valueText, row, labelCell: cells[i], valueCell: cells[i + 1] });
+    }
+  }
+
+  const labels = root.querySelectorAll('dt');
+  for (const label of labels) {
+    const valueElement = label.nextElementSibling;
+    if (!valueElement || valueElement.tagName !== 'DD') continue;
+
+    const labelText = normalizeTableLabel(label.textContent);
+    const valueText = normalizeTableText(valueElement.textContent);
+    if (!labelText || !valueText) continue;
+    callback({
+      labelText,
+      valueText,
+      row: label.closest('dl') || label.parentElement,
+      labelCell: label,
+      valueCell: valueElement
+    });
+  }
+}
+
+function findYenTextInBody(labelPattern) {
+  const bodyText = document.body.textContent;
+  const match = bodyText.match(new RegExp(`${labelPattern}[等]*[^\\d万]*?([0-9,]+(?:万[0-9,]*)?円)`));
+  return match ? match[1] : '';
+}
+
 /**
  * 指定ミリ秒待機する
  * @param {number} ms - 待機時間（ミリ秒）
@@ -533,64 +644,23 @@ function extractManagementAndRepairFees() {
   let managementFeeText = '';
   let repairFundText = '';
 
-  if (SITE_TYPE === 'SUUMO') {
-    // テーブルのth/tdから取得を試みる
-    const tables = document.querySelectorAll('table');
-    for (const table of tables) {
-      const rows = table.querySelectorAll('tr');
-      for (const row of rows) {
-        const th = row.querySelector('th');
-        const td = row.querySelector('td');
-        if (!th || !td) continue;
-        const thText = th.textContent.trim();
-        if (thText.includes('管理費') && !thText.includes('修繕積立金')) {
-          managementFeeText = td.textContent.trim();
-        }
-        if (thText.includes('修繕積立金') && !thText.includes('基金')) {
-          repairFundText = td.textContent.trim();
-        }
-      }
-    }
-    // フォールバック: テーブルから取得できなかった場合、本文テキストから検索
+  if (['SUUMO', 'REHOUSE', 'ATHOME', 'HOMES'].includes(SITE_TYPE)) {
+    const managementResult = findLabeledValue(document, labelText =>
+      labelText.includes('管理費') && !labelText.includes('修繕積立金')
+    );
+    const repairResult = findLabeledValue(document, labelText =>
+      labelText.includes('修繕積立金') && !labelText.includes('基金')
+    );
+
+    if (managementResult) managementFeeText = managementResult.text;
+    if (repairResult) repairFundText = repairResult.text;
+
     if (!managementFeeText || !extractYenAmount(managementFeeText)) {
-      const bodyText = document.body.textContent;
-      const mgmtMatch = bodyText.match(/管理費[等]*[^\d万]*?([0-9,]+(?:万[0-9,]*)?円)/);
-      if (mgmtMatch) managementFeeText = mgmtMatch[1];
+      managementFeeText = findYenTextInBody('管理費') || managementFeeText;
     }
     if (!repairFundText || !extractYenAmount(repairFundText)) {
-      const bodyText = document.body.textContent;
-      const repairMatch = bodyText.match(/修繕積立金[等]*[^\d万]*?([0-9,]+(?:万[0-9,]*)?円)/);
-      if (repairMatch) repairFundText = repairMatch[1];
+      repairFundText = findYenTextInBody('修繕積立金') || repairFundText;
     }
-  } else if (SITE_TYPE === 'REHOUSE') {
-    const bodyText = document.body.textContent;
-    const mgmtMatch = bodyText.match(/管理費[等]*[^\d万]*?([0-9,]+(?:万[0-9,]*)?円)/);
-    if (mgmtMatch) managementFeeText = mgmtMatch[1];
-    const repairMatch = bodyText.match(/修繕積立金[等]*[^\d万]*?([0-9,]+(?:万[0-9,]*)?円)/);
-    if (repairMatch) repairFundText = repairMatch[1];
-  } else if (SITE_TYPE === 'ATHOME') {
-    const tables = document.querySelectorAll('table');
-    for (const table of tables) {
-      const rows = table.querySelectorAll('tr');
-      for (const row of rows) {
-        const th = row.querySelector('th');
-        const td = row.querySelector('td');
-        if (!th || !td) continue;
-        const thText = th.textContent.trim();
-        if (thText.includes('管理費')) {
-          managementFeeText = td.textContent.trim();
-        }
-        if (thText.includes('修繕積立金')) {
-          repairFundText = td.textContent.trim();
-        }
-      }
-    }
-  } else if (SITE_TYPE === 'HOMES') {
-    const bodyText = document.body.textContent;
-    const mgmtMatch = bodyText.match(/管理費[等]*[^\d万]*?([0-9,]+(?:万[0-9,]*)?円)/);
-    if (mgmtMatch) managementFeeText = mgmtMatch[1];
-    const repairMatch = bodyText.match(/修繕積立金[等]*[^\d万]*?([0-9,]+(?:万[0-9,]*)?円)/);
-    if (repairMatch) repairFundText = repairMatch[1];
   }
 
   const managementFee = extractYenAmount(managementFeeText);
@@ -1736,7 +1806,17 @@ function processDetailPage() {
     // 三井のリハウス詳細ページ
     priceElement = document.querySelector('.text-price-regular.price-size') ||
                    document.querySelector('.building-price-info');
-    const areaElement = document.querySelector('.building-info');
+    let areaElement = document.querySelector('.building-info');
+
+    if (!priceElement) {
+      const priceResult = findLabeledValue(document, matchesPropertyPriceLabel);
+      if (priceResult) priceElement = priceResult.valueCell;
+    }
+
+    if (!areaElement) {
+      const areaResult = findLabeledValue(document, labelText => labelText.includes('専有面積'));
+      if (areaResult) areaElement = areaResult.valueCell;
+    }
 
     if (priceElement && areaElement) {
       detailPrice = extractNumber(priceElement.textContent);
@@ -1746,7 +1826,18 @@ function processDetailPage() {
   } else if (SITE_TYPE === 'HOMES') {
     // ホームズ詳細ページ
     priceElement = document.querySelector('[data-component="price"]');
-    const areaElement = document.querySelector('[data-component="occupiedArea"]');
+    let areaElement = document.querySelector('[data-component="occupiedArea"]') ||
+                      document.querySelector('#chk-bkc-housearea');
+
+    if (!priceElement) {
+      const priceResult = findLabeledValue(document, matchesPropertyPriceLabel);
+      if (priceResult) priceElement = priceResult.valueCell;
+    }
+
+    if (!areaElement) {
+      const areaResult = findLabeledValue(document, labelText => labelText.includes('専有面積'));
+      if (areaResult) areaElement = areaResult.valueCell;
+    }
 
     if (priceElement && areaElement) {
       detailPrice = extractNumber(priceElement.textContent);
@@ -1756,21 +1847,16 @@ function processDetailPage() {
   } else if (SITE_TYPE === 'ATHOME') {
     // アットホーム詳細ページ
     priceElement = document.querySelector('.price-main');
-
-    // 面積要素を取得（テーブルから）
     let areaElement = null;
-    const tables = document.querySelectorAll('table');
-    for (const table of tables) {
-      const rows = table.querySelectorAll('tr');
-      for (const row of rows) {
-        const th = row.querySelector('th');
-        const td = row.querySelector('td');
-        if (th && th.textContent.trim() === '専有面積' && td) {
-          areaElement = td;
-          break;
-        }
-      }
-      if (areaElement) break;
+
+    if (!priceElement) {
+      const priceResult = findLabeledValue(document, matchesPropertyPriceLabel);
+      if (priceResult) priceElement = priceResult.valueCell;
+    }
+
+    const areaResult = findLabeledValue(document, labelText => labelText.includes('専有面積'));
+    if (areaResult) {
+      areaElement = areaResult.valueCell;
     }
 
     if (priceElement && areaElement) {
@@ -1783,32 +1869,13 @@ function processDetailPage() {
     const tables = document.querySelectorAll('table');
     log('テーブル数:', tables.length);
 
-    for (const table of tables) {
-      const rows = table.querySelectorAll('tr');
-      let priceRow = null;
-      let areaRow = null;
+    const priceResult = findLabeledValue(document, matchesPropertyPriceLabel);
+    const areaResult = findLabeledValue(document, labelText => labelText.includes('専有面積'));
 
-      for (const row of rows) {
-        const th = row.querySelector('th');
-        if (th && th.textContent.includes('価格')) {
-          priceRow = row;
-        }
-        if (th && th.textContent.includes('専有面積')) {
-          areaRow = row;
-        }
-      }
-
-      if (priceRow && areaRow) {
-        const priceTd = priceRow.querySelector('td');
-        const areaTd = areaRow.querySelector('td');
-
-        if (priceTd && areaTd) {
-          detailPrice = extractNumber(priceTd.textContent);
-          detailArea = extractNumber(areaTd.textContent);
-          log('物件概要から取得 - 価格:', detailPrice, '万円, 面積:', detailArea, '㎡');
-          break;
-        }
-      }
+    if (priceResult && areaResult) {
+      detailPrice = extractNumber(priceResult.text);
+      detailArea = extractNumber(areaResult.text);
+      log('物件概要から取得 - 価格:', detailPrice, '万円, 面積:', detailArea, '㎡');
     }
   }
 
@@ -1934,80 +2001,39 @@ function displayRepairFundPerSqm(area) {
   let totalUnitsText = '';
   let repairFundRow = null; // 修繕積立金の表示行（挿入位置用）
 
-  if (SITE_TYPE === 'SUUMO') {
-    const tables = document.querySelectorAll('table');
-    for (const table of tables) {
-      const rows = table.querySelectorAll('tr');
-      for (const row of rows) {
-        const th = row.querySelector('th');
-        const td = row.querySelector('td');
-        if (!th || !td) continue;
-        const thText = th.textContent.trim();
-        if (thText.includes('修繕積立金') && !thText.includes('基金')) {
-          repairFundText = td.textContent.trim();
-          repairFundRow = row;
-        }
-        if (thText.includes('建物階数') || (thText.includes('所在階') && thText.includes('構造'))) {
-          buildingFloorsText = td.textContent.trim();
-        }
-        if (thText.includes('総戸数')) {
-          totalUnitsText = td.textContent.trim();
-        }
-      }
+  if (['SUUMO', 'REHOUSE', 'ATHOME', 'HOMES'].includes(SITE_TYPE)) {
+    const repairResult = findLabeledValue(document, labelText =>
+      labelText.includes('修繕積立金') && !labelText.includes('基金')
+    );
+    const floorsResult = findLabeledValue(document, labelText =>
+      labelText.includes('建物階数') ||
+      labelText.includes('階建') ||
+      labelText.includes('階数') ||
+      (labelText.includes('所在階') && labelText.includes('構造'))
+    );
+    const unitsResult = findLabeledValue(document, labelText =>
+      labelText.includes('総戸数')
+    );
+
+    if (repairResult) {
+      repairFundText = repairResult.text;
+      repairFundRow = repairResult.row;
     }
-    // フォールバック: テーブルから取得できなかった場合、本文テキストから検索
+    if (floorsResult) buildingFloorsText = floorsResult.text;
+    if (unitsResult) totalUnitsText = unitsResult.text;
+
+    const bodyText = document.body.textContent;
     if (!repairFundText || !extractYenAmount(repairFundText)) {
-      const bodyText = document.body.textContent;
-      const repairMatch = bodyText.match(/修繕積立金[等]*[^\d万]*?([0-9,]+(?:万[0-9,]*)?円)/);
-      if (repairMatch) repairFundText = repairMatch[1];
+      repairFundText = findYenTextInBody('修繕積立金') || repairFundText;
     }
     if (!buildingFloorsText) {
-      const bodyText = document.body.textContent;
-      const floorsMatch = bodyText.match(/(?:地上|RC|SRC|鉄骨鉄筋|鉄筋|鉄骨)?(\d+)階(?:地下\d+階)?建/);
+      const floorsMatch = bodyText.match(/(?:地上|RC|SRC|鉄骨鉄筋|鉄筋|鉄骨)?(\d+)階\s*(?:地下\d+階)?建/);
       if (floorsMatch) buildingFloorsText = floorsMatch[1] + '階建';
     }
     if (!totalUnitsText) {
-      const bodyText = document.body.textContent;
       const unitsMatch = bodyText.match(/総戸数\s*([0-9,]+戸)/);
       if (unitsMatch) totalUnitsText = unitsMatch[1];
     }
-  } else if (SITE_TYPE === 'REHOUSE') {
-    const bodyText = document.body.textContent;
-    const repairMatch = bodyText.match(/修繕積立金[等]*[^\d万]*?([0-9,]+(?:万[0-9,]*)?円)/);
-    if (repairMatch) repairFundText = repairMatch[1];
-    const floorsMatch = bodyText.match(/(?:地上|RC|SRC|鉄骨鉄筋|鉄筋|鉄骨)?(\d+)階(?:地下\d+階)?建/);
-    if (floorsMatch) buildingFloorsText = floorsMatch[1] + '階建';
-    const unitsMatch = bodyText.match(/総戸数\s*([0-9,]+戸)/);
-    if (unitsMatch) totalUnitsText = unitsMatch[1];
-  } else if (SITE_TYPE === 'ATHOME') {
-    const tables = document.querySelectorAll('table');
-    for (const table of tables) {
-      const rows = table.querySelectorAll('tr');
-      for (const row of rows) {
-        const th = row.querySelector('th');
-        const td = row.querySelector('td');
-        if (!th || !td) continue;
-        const thText = th.textContent.trim();
-        if (thText.includes('修繕積立金')) {
-          repairFundText = td.textContent.trim();
-          repairFundRow = row;
-        }
-        if (thText.includes('階建')) {
-          buildingFloorsText = td.textContent.trim();
-        }
-        if (thText.includes('総戸数')) {
-          totalUnitsText = td.textContent.trim();
-        }
-      }
-    }
-  } else if (SITE_TYPE === 'HOMES') {
-    const bodyText = document.body.textContent;
-    const repairMatch = bodyText.match(/修繕積立金[等]*[^\d万]*?([0-9,]+(?:万[0-9,]*)?円)/);
-    if (repairMatch) repairFundText = repairMatch[1];
-    const floorsEl = document.querySelector('[data-component="buildingFloors"]');
-    if (floorsEl) buildingFloorsText = floorsEl.textContent.trim();
-    const unitsMatch = bodyText.match(/総戸数\s*([0-9,]+戸)/);
-    if (unitsMatch) totalUnitsText = unitsMatch[1];
   }
 
   if (!repairFundText) {
@@ -2367,6 +2393,34 @@ function extractRehouseDetailInfo(doc, detailInfo) {
   // テキストから情報を抽出（より厳密なパターンマッチング）
   const bodyText = doc.body.textContent;
 
+  const managementResult = findLabeledValue(doc, labelText =>
+    labelText.includes('管理費') && !labelText.includes('修繕積立金')
+  );
+  if (managementResult) {
+    detailInfo.managementFee = managementResult.text.split(/\[/)[0].trim();
+  }
+
+  const repairResult = findLabeledValue(doc, labelText =>
+    labelText.includes('修繕積立金') && !labelText.includes('基金')
+  );
+  if (repairResult) {
+    detailInfo.repairFund = repairResult.text.split(/\[/)[0].trim();
+  }
+
+  const floorResult = findLabeledValue(doc, labelText =>
+    labelText.includes('階数') && labelText.includes('階建')
+  );
+  if (floorResult) {
+    const floorParts = floorResult.text.split(/[/／]/).map(part => part.trim()).filter(Boolean);
+    if (floorParts[0]) detailInfo.floor = floorParts[0];
+    if (floorParts[1]) detailInfo.buildingFloors = floorParts[1];
+  }
+
+  const totalUnitsResult = findLabeledValue(doc, labelText => labelText.includes('総戸数'));
+  if (totalUnitsResult) {
+    detailInfo.totalUnits = totalUnitsResult.text;
+  }
+
   // 住所を取得: 「所在地」ラベルの直後から取得
   const addressWithLabelMatch = bodyText.match(/所在地\s*(東京都|神奈川県|千葉県|埼玉県|大阪府|京都府|兵庫県|愛知県|福岡県|北海道)[^(\n)]+?(?=\n|GoogleMaps|スーパー|公園|病院|小学校|中学校|その他|駅|価格|交通|管理費|$)/);
   if (addressWithLabelMatch) {
@@ -2388,7 +2442,7 @@ function extractRehouseDetailInfo(doc, detailInfo) {
 
   // 階数/階建: より厳密なパターン "32階 / 地上32階"
   const floorMatch = bodyText.match(/(\d+階)\s*[/／]\s*(地上|地下)?(\d+階)/);
-  if (floorMatch) {
+  if (floorMatch && !detailInfo.floor && !detailInfo.buildingFloors) {
     detailInfo.floor = floorMatch[1];
     detailInfo.buildingFloors = (floorMatch[2] || '') + floorMatch[3];
   }
@@ -2401,13 +2455,13 @@ function extractRehouseDetailInfo(doc, detailInfo) {
 
   // 管理費: 最初の1つのみ取得
   const managementMatch = bodyText.match(/管理費[等]*[^\d万]*?([0-9,]+(?:万[0-9,]*)?円)(?:\s|\/|月|$)/);
-  if (managementMatch) {
+  if (managementMatch && !detailInfo.managementFee) {
     detailInfo.managementFee = managementMatch[1];
   }
 
   // 修繕積立金: 最初の1つのみ取得
   const repairMatch = bodyText.match(/修繕積立金[等]*[^\d万]*?([0-9,]+(?:万[0-9,]*)?円)(?:\s|\/|月|$)/);
-  if (repairMatch) {
+  if (repairMatch && !detailInfo.repairFund) {
     detailInfo.repairFund = repairMatch[1];
   }
 
@@ -2437,7 +2491,7 @@ function extractRehouseDetailInfo(doc, detailInfo) {
 
   // 総戸数: 数値+戸の形式
   const totalUnitsMatch = bodyText.match(/総戸数\s*([0-9,]+戸)(?:\s|管理会社|管理形態|$)/);
-  if (totalUnitsMatch) {
+  if (totalUnitsMatch && !detailInfo.totalUnits) {
     detailInfo.totalUnits = totalUnitsMatch[1];
   }
 
@@ -2513,49 +2567,37 @@ function extractAthomeDetailInfo(doc, detailInfo) {
     detailInfo.address = address;
   }
 
-  // 階建/階: テーブル構造から取得を試みる
-  const tables = doc.querySelectorAll('table');
-  for (const table of tables) {
-    const rows = table.querySelectorAll('tr');
-    for (const row of rows) {
-      const th = row.querySelector('th');
-      const td = row.querySelector('td');
-      if (!th || !td) continue;
-
-      const thText = th.textContent.trim();
-      const tdText = td.textContent.trim();
-
-      if (thText.includes('所在階')) {
-        detailInfo.floor = tdText;
-      } else if (thText.includes('階建')) {
-        detailInfo.buildingFloors = tdText;
-      } else if (thText.includes('間取り')) {
-        detailInfo.layout = tdText;
-      } else if (thText.includes('バルコニー')) {
-        detailInfo.balconyArea = tdText;
-      } else if (thText.includes('管理費')) {
-        detailInfo.managementFee = tdText.split(/[/／]/)[0].trim();
-      } else if (thText.includes('修繕積立金')) {
-        detailInfo.repairFund = tdText.split(/[/／]/)[0].trim();
-      } else if (thText.includes('建物構造') || thText === '構造') {
-        detailInfo.structure = tdText;
-      } else if (thText.includes('総戸数')) {
-        detailInfo.totalUnits = tdText;
-      } else if (thText.includes('駐車場')) {
-        if (tdText !== '－' && tdText !== '-') {
-          detailInfo.parking = tdText;
-        }
-      } else if (thText.includes('築年月')) {
-        detailInfo.builtDate = tdText.split(/[（(]/)[0].trim();
-      } else if (thText.includes('土地権利')) {
-        detailInfo.landRights = tdText;
-      } else if (thText.includes('引渡')) {
-        detailInfo.deliveryTime = tdText;
-      } else if (thText.includes('向き')) {
-        detailInfo.direction = tdText;
+  walkLabeledValues(doc, ({ labelText, valueText }) => {
+    if (labelText.includes('所在階')) {
+      detailInfo.floor = valueText;
+    } else if (labelText.includes('階建')) {
+      detailInfo.buildingFloors = valueText;
+    } else if (labelText.includes('間取り')) {
+      detailInfo.layout = valueText;
+    } else if (labelText.includes('バルコニー')) {
+      detailInfo.balconyArea = valueText;
+    } else if (labelText.includes('管理費') && !labelText.includes('修繕積立金')) {
+      detailInfo.managementFee = valueText.split(/[/／]/)[0].trim();
+    } else if (labelText.includes('修繕積立金')) {
+      detailInfo.repairFund = valueText.split(/[/／]/)[0].trim();
+    } else if (labelText.includes('建物構造') || labelText === '構造') {
+      detailInfo.structure = valueText;
+    } else if (labelText.includes('総戸数')) {
+      detailInfo.totalUnits = valueText;
+    } else if (labelText.includes('駐車場')) {
+      if (valueText !== '－' && valueText !== '-') {
+        detailInfo.parking = valueText;
       }
+    } else if (labelText.includes('築年月')) {
+      detailInfo.builtDate = valueText.split(/[（(]/)[0].trim();
+    } else if (labelText.includes('土地権利')) {
+      detailInfo.landRights = valueText;
+    } else if (labelText.includes('引渡')) {
+      detailInfo.deliveryTime = valueText;
+    } else if (labelText.includes('向き')) {
+      detailInfo.direction = valueText;
     }
-  }
+  });
 
   // テーブルで取得できなかった場合のフォールバック（正規表現）
   if (!detailInfo.layout) {
@@ -2607,50 +2649,82 @@ function extractHomesDetailInfo(doc, detailInfo) {
   const floorEl = doc.querySelector('[data-component="floor"]');
   if (floorEl) detailInfo.floor = floorEl.textContent.trim();
 
-  const directionEl = doc.querySelector('[data-component="direction"]');
+  const directionEl = doc.querySelector('[data-component="direction"]') ||
+                      doc.querySelector('#chk-bkc-windowangle');
   if (directionEl) detailInfo.direction = directionEl.textContent.trim();
 
-  const buildingFloorsEl = doc.querySelector('[data-component="buildingFloors"]');
+  const buildingFloorsEl = doc.querySelector('[data-component="buildingFloors"]') ||
+                           doc.querySelector('#chk-bkd-housekai');
   if (buildingFloorsEl) detailInfo.buildingFloors = buildingFloorsEl.textContent.trim();
+
+  walkLabeledValues(doc, ({ labelText, valueText }) => {
+    if (labelText.includes('所在階') && labelText.includes('階数')) {
+      const floorParts = valueText.split(/[/／]/).map(part => part.trim()).filter(Boolean);
+      if (floorParts[0]) detailInfo.floor = floorParts[0];
+      if (floorParts[1]) detailInfo.buildingFloors = floorParts[1];
+    } else if (labelText.includes('主要採光面') || labelText.includes('向き')) {
+      detailInfo.direction = valueText;
+    } else if (labelText.includes('間取り')) {
+      detailInfo.layout = valueText;
+    } else if (labelText.includes('バルコニー')) {
+      detailInfo.balconyArea = valueText;
+    } else if (labelText.includes('管理費') && !labelText.includes('修繕積立金')) {
+      detailInfo.managementFee = valueText.split(/[/／]/)[0].trim();
+    } else if (labelText.includes('修繕積立金') && !labelText.includes('基金')) {
+      detailInfo.repairFund = valueText.split(/[/／]/)[0].trim();
+    } else if (labelText.includes('総戸数')) {
+      detailInfo.totalUnits = valueText;
+    } else if (labelText.includes('建物構造') || labelText === '構造') {
+      detailInfo.structure = valueText;
+    } else if (labelText.includes('駐車場')) {
+      detailInfo.parking = valueText;
+    } else if (labelText.includes('築年月')) {
+      detailInfo.builtDate = valueText.split(/[（(]/)[0].trim();
+    } else if (labelText.includes('用途地域')) {
+      detailInfo.zoning = valueText;
+    } else if (labelText.includes('引渡')) {
+      detailInfo.deliveryTime = valueText;
+    }
+  });
 
   // テキストから情報を抽出
   const managementMatch = bodyText.match(/管理費[等]*[^\d万]*?([0-9,]+(?:万[0-9,]*)?円)/);
-  if (managementMatch) {
+  if (managementMatch && !detailInfo.managementFee) {
     detailInfo.managementFee = managementMatch[1];
   }
 
   const repairMatch = bodyText.match(/修繕積立金[等]*[^\d万]*?([0-9,]+(?:万[0-9,]*)?円)/);
-  if (repairMatch) {
+  if (repairMatch && !detailInfo.repairFund) {
     detailInfo.repairFund = repairMatch[1];
   }
 
   const layoutMatch = bodyText.match(/([0-9]+[SLDK]+)/);
-  if (layoutMatch) {
+  if (layoutMatch && !detailInfo.layout) {
     detailInfo.layout = layoutMatch[1];
   }
 
   const balconyMatch = bodyText.match(/バルコニー[^\d]*([0-9.]+㎡)/);
-  if (balconyMatch) {
+  if (balconyMatch && !detailInfo.balconyArea) {
     detailInfo.balconyArea = balconyMatch[1];
   }
 
   const totalUnitsMatch = bodyText.match(/総戸数\s*([0-9,]+戸)/);
-  if (totalUnitsMatch) {
+  if (totalUnitsMatch && !detailInfo.totalUnits) {
     detailInfo.totalUnits = totalUnitsMatch[1];
   }
 
   const structureMatch = bodyText.match(/(RC|SRC|鉄骨鉄筋コンクリート|鉄筋コンクリート|鉄骨造|木造)/);
-  if (structureMatch) {
+  if (structureMatch && !detailInfo.structure) {
     detailInfo.structure = structureMatch[1];
   }
 
   const parkingMatch = bodyText.match(/駐車場\s*([^\n]+)/);
-  if (parkingMatch) {
+  if (parkingMatch && !detailInfo.parking) {
     detailInfo.parking = parkingMatch[1].trim();
   }
 
   const builtDateMatch = bodyText.match(/(\d{4}年\d+月)/);
-  if (builtDateMatch) {
+  if (builtDateMatch && !detailInfo.builtDate) {
     detailInfo.builtDate = builtDateMatch[1];
   }
 
@@ -2717,17 +2791,13 @@ function findFirstElement(root, selectors) {
 }
 
 function findValueByTableHeader(root, headerText) {
-  const rows = root.querySelectorAll('tr');
-  for (const row of rows) {
-    const ths = row.querySelectorAll('th');
-    for (const th of ths) {
-      if (th.textContent.includes(headerText)) {
-        const td = th.nextElementSibling;
-        if (td && td.tagName === 'TD') return td;
-      }
-    }
-  }
-  return null;
+  const normalizedHeader = normalizeTableLabel(headerText);
+  const result = findLabeledValue(root, labelText => (
+    normalizedHeader === '価格'
+      ? matchesPropertyPriceLabel(labelText)
+      : labelText.includes(normalizedHeader)
+  ));
+  return result ? result.valueCell : null;
 }
 
 function extractCsvPriceElement(card) {

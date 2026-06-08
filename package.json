@@ -1,6 +1,6 @@
 {
   "name": "fudosan-tanka-viewer",
-  "version": "1.8.1",
+  "version": "1.8.2",
   "private": true,
   "scripts": {
     "test": "node --check content.js && node --check popup.js && node --check background.js && node test_csv_export.js && node test_background.js",

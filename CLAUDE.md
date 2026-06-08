@@ -58,6 +58,7 @@ fudosan-tanka-viewer/
 ├── popup.js               # お気に入りポップアップロジック
 ├── popup.css              # お気に入りポップアップスタイル
 ├── icons/                 # 拡張機能アイコン（16px, 48px, 128px）
+├── scripts/               # npmなし環境向けテストスクリプト
 ├── .github/workflows/     # CI/CD
 │   ├── ci.yml             # PR/Push時の検証＋ビルド
 │   └── release.yml        # タグPushでリリース＋CWSアップロード
@@ -102,6 +103,12 @@ fudosan-tanka-viewer/
 2. `chrome://extensions/` で拡張機能の「更新」ボタンをクリック
 3. 対象サイトのページをリロード（Ctrl+R）
 4. Consoleでログを確認
+
+### テスト方法
+
+通常環境では `npm test` を使う。Codexなど `npm` がPATHにない環境では、同等の軽量チェックとして `bash scripts/test.sh` を使う。
+
+Chrome拡張として読み込むE2Eは通常環境では `npm run test:e2e` を使う。Codexなど `npm` がPATHにない環境では `bash scripts/test-e2e.sh` を使う。必要に応じて `NODE_BIN=/path/to/node` や `CHROME_PATH=/path/to/Chromium` を指定する。
 
 ## アーキテクチャ
 
