@@ -36,7 +36,7 @@ const VIEWING_CHECKLIST_ITEMS = [
 
 const RELEASE_NOTES = [
   {
-    version: '1.10.0',
+    version: '1.10.1',
     title: 'Side Panelで比較しやすく刷新',
     items: [
       'ポップアップを候補・値下がり・内見メモが見やすいDecision Boardデザインに刷新しました。',
