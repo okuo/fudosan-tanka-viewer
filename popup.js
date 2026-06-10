@@ -36,6 +36,16 @@ const VIEWING_CHECKLIST_ITEMS = [
 
 const RELEASE_NOTES = [
   {
+    version: '1.10.0',
+    title: 'Side Panelで比較しやすく刷新',
+    items: [
+      'ポップアップを候補・値下がり・内見メモが見やすいDecision Boardデザインに刷新しました。',
+      'Chrome Side Panelで物件比較、価格履歴、メモ、内見チェックリストをまとめて確認できるようにしました。',
+      'ポップアップからSide Panelを開ける導線と、お気に入り候補のCSV出力を追加しました。',
+      '配布zipとCIのチェック対象にSide Panelファイルを追加しました。'
+    ]
+  },
+  {
     version: '1.9.0',
     title: '購入判断を助ける機能を追加',
     items: [
@@ -200,9 +210,33 @@ function loadFavorites() {
 
 function renderAllViews(favorites) {
   currentFavorites = Array.isArray(favorites) ? favorites : [];
+  updatePopupSummary(currentFavorites);
   renderFavorites(currentFavorites);
   renderComparisonBoard(currentFavorites);
   renderViewingChecklist(currentFavorites);
+}
+
+function updatePopupSummary(favorites) {
+  const totalEl = document.getElementById('summary-total');
+  const dropsEl = document.getElementById('summary-price-drops');
+  const viewingsEl = document.getElementById('summary-viewings');
+  if (!totalEl || !dropsEl || !viewingsEl) return;
+
+  const priceDrops = favorites.filter((fav) => {
+    const latestHistory = Array.isArray(fav.priceHistory) ? fav.priceHistory[0] : null;
+    const previousPrice = latestHistory?.previousPrice || fav.previousPrice;
+    const currentPrice = latestHistory?.currentPrice || fav.currentPrice;
+    return previousPrice && currentPrice && currentPrice < previousPrice;
+  }).length;
+
+  const viewings = favorites.filter((fav) => {
+    const progress = getViewingChecklistProgress(fav);
+    return progress.completed > 0 || Boolean(fav.viewingNote);
+  }).length;
+
+  totalEl.textContent = favorites.length.toLocaleString();
+  dropsEl.textContent = priceDrops.toLocaleString();
+  viewingsEl.textContent = viewings.toLocaleString();
 }
 
 function getVisibleSortedFavorites(favorites) {
@@ -234,9 +268,14 @@ function renderFavorites(favorites) {
   listEl.style.display = 'block';
   emptyEl.style.display = 'none';
 
-  sorted.forEach((fav) => {
+  sorted.forEach((fav, index) => {
     const item = document.createElement('div');
     item.className = 'favorite-item';
+
+    const rank = document.createElement('div');
+    rank.className = 'favorite-rank';
+    rank.textContent = String(index + 1);
+    item.appendChild(rank);
 
     const info = document.createElement('div');
     info.className = 'favorite-info';
@@ -252,6 +291,7 @@ function renderFavorites(favorites) {
 
     const details = document.createElement('div');
     details.className = 'favorite-details';
+    const monthlyCost = calculateFavoriteMonthlyCost(fav);
 
     const siteBadge = document.createElement('span');
     siteBadge.className = `favorite-site favorite-site--${fav.site}`;
@@ -261,23 +301,30 @@ function renderFavorites(favorites) {
     const currentPrice = fav.currentPrice || fav.price;
     if (currentPrice) {
       const priceEl = document.createElement('span');
-      priceEl.className = 'favorite-detail-item';
+      priceEl.className = 'favorite-detail-item favorite-detail-item--price';
       priceEl.textContent = formatPrice(currentPrice);
       details.appendChild(priceEl);
     }
 
     if (fav.area) {
       const areaEl = document.createElement('span');
-      areaEl.className = 'favorite-detail-item';
+      areaEl.className = 'favorite-detail-item favorite-detail-item--area';
       areaEl.textContent = `${fav.area}m²`;
       details.appendChild(areaEl);
     }
 
     if (fav.tsubotanka) {
       const tankaEl = document.createElement('span');
-      tankaEl.className = 'favorite-detail-item';
-      tankaEl.textContent = `@${fav.tsubotanka.toLocaleString()}万/坪`;
+      tankaEl.className = 'favorite-detail-item favorite-detail-item--tsubo';
+      tankaEl.textContent = `坪${fav.tsubotanka.toLocaleString()}万`;
       details.appendChild(tankaEl);
+    }
+
+    if (monthlyCost) {
+      const monthlyEl = document.createElement('span');
+      monthlyEl.className = 'favorite-detail-item favorite-detail-item--monthly';
+      monthlyEl.textContent = `月額 ${formatMonthlyCost(monthlyCost.totalMonthly)}`;
+      details.appendChild(monthlyEl);
     }
 
     info.appendChild(details);
@@ -988,6 +1035,100 @@ function setupFavoriteRecheck() {
   button.addEventListener('click', requestFavoriteRecheck);
 }
 
+function openSidePanel() {
+  const fallbackUrl = chrome.runtime.getURL('sidepanel.html');
+
+  if (!chrome.sidePanel?.open || !chrome.windows?.getCurrent) {
+    chrome.tabs.create({ url: fallbackUrl });
+    return;
+  }
+
+  chrome.windows.getCurrent((currentWindow) => {
+    const windowId = currentWindow?.id;
+    if (!windowId) {
+      chrome.tabs.create({ url: fallbackUrl });
+      return;
+    }
+
+    const openResult = chrome.sidePanel.open({ windowId });
+    if (openResult?.catch) {
+      openResult.catch(() => {
+        chrome.tabs.create({ url: fallbackUrl });
+      });
+    }
+  });
+}
+
+function escapeCsvCell(value) {
+  const text = value === null || value === undefined ? '' : String(value);
+  return `"${text.replace(/"/g, '""')}"`;
+}
+
+function exportFavoritesCsv() {
+  if (!currentFavorites.length) {
+    setRecheckStatus('出力できる候補がありません');
+    return;
+  }
+
+  const headers = [
+    'サイト',
+    '物件名',
+    'URL',
+    '価格',
+    '専有面積',
+    '坪単価',
+    '月額概算',
+    '管理費',
+    '修繕積立金',
+    '価格変動',
+    '掲載状態',
+    'メモ'
+  ];
+
+  const rows = currentFavorites.map((fav) => {
+    const monthlyCost = calculateFavoriteMonthlyCost(fav);
+    const latestHistory = Array.isArray(fav.priceHistory) ? fav.priceHistory[0] : null;
+    const previousPrice = latestHistory?.previousPrice || fav.previousPrice;
+    const currentPrice = latestHistory?.currentPrice || fav.currentPrice || fav.price;
+    const priceDiff = previousPrice && currentPrice && previousPrice !== currentPrice
+      ? formatSignedMan(currentPrice - previousPrice)
+      : '';
+
+    return [
+      getSiteDisplayName(fav.site),
+      fav.name || '',
+      fav.url || '',
+      formatPrice(currentPrice),
+      fav.area ? `${fav.area}m²` : '',
+      fav.tsubotanka ? `${fav.tsubotanka.toLocaleString()}万円/坪` : '',
+      monthlyCost ? formatMonthlyCost(monthlyCost.totalMonthly) : '',
+      formatYen(Number(fav.managementFee) || 0),
+      formatYen(Number(fav.repairFund) || 0),
+      priceDiff,
+      fav.listingStatusLabel || fav.listingStatus || '',
+      fav.memo || ''
+    ];
+  });
+
+  const csv = '\uFEFF' + [headers, ...rows]
+    .map((row) => row.map(escapeCsvCell).join(','))
+    .join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  const timestamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15);
+  link.href = url;
+  link.download = `坪たん_候補_${timestamp}.csv`;
+  link.click();
+  URL.revokeObjectURL(url);
+  setRecheckStatus(`${currentFavorites.length}件をCSV出力しました`);
+}
+
+function setupPopupActions() {
+  document.getElementById('open-side-panel')?.addEventListener('click', openSidePanel);
+  document.getElementById('export-favorites-csv')?.addEventListener('click', exportFavoritesCsv);
+}
+
 function switchPopupView(viewName) {
   currentView = viewName;
 
@@ -1042,5 +1183,6 @@ renderExtensionVersion();
 setupReleaseNotes();
 setupViewTabs();
 setupFavoriteRecheck();
+setupPopupActions();
 setupLoanSettings();
 loadFavorites();

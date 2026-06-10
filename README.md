@@ -137,6 +137,9 @@ fudosan-tanka-viewer/
 ├── popup.html             # お気に入り・ローン条件ポップアップUI
 ├── popup.js               # ポップアップロジック
 ├── popup.css              # ポップアップスタイル
+├── sidepanel.html         # 比較・内見用Side Panel UI
+├── sidepanel.js           # Side Panelロジック
+├── sidepanel.css          # Side Panelスタイル
 ├── icons/                 # アイコン画像
 ├── scripts/               # npmなし環境向けテストスクリプト
 ├── CLAUDE.md             # 開発者向けドキュメント
@@ -180,6 +183,7 @@ bash scripts/test.sh
 ```bash
 node --check content.js
 node --check popup.js
+node --check sidepanel.js
 node --check background.js
 node --check tests/e2e_extension.js
 node test_csv_export.js

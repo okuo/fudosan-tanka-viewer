@@ -8,15 +8,33 @@
 </head>
 <body>
   <div class="popup-header">
-    <h1>お気に入り物件</h1>
+    <div class="popup-brand">
+      <img src="icons/icon32.png" alt="" class="popup-brand-icon">
+      <h1>坪たん</h1>
+    </div>
     <button id="extension-version" class="extension-version" type="button" aria-label="リリースノートを表示"></button>
   </div>
 
   <div class="view-tabs" role="tablist" aria-label="表示切替">
-    <button class="view-tab active" type="button" data-view="favorites" role="tab" aria-selected="true">お気に入り</button>
+    <button class="view-tab active" type="button" data-view="favorites" role="tab" aria-selected="true">候補</button>
     <button class="view-tab" type="button" data-view="compare" role="tab" aria-selected="false">比較</button>
     <button class="view-tab" type="button" data-view="checklist" role="tab" aria-selected="false">内見</button>
   </div>
+
+  <section class="summary-strip" aria-label="候補サマリー">
+    <div class="summary-card">
+      <span class="summary-label">候補</span>
+      <strong id="summary-total">0</strong>
+    </div>
+    <div class="summary-card summary-card--down">
+      <span class="summary-label">値下がり</span>
+      <strong id="summary-price-drops">0</strong>
+    </div>
+    <div class="summary-card summary-card--viewing">
+      <span class="summary-label">内見メモ</span>
+      <strong id="summary-viewings">0</strong>
+    </div>
+  </section>
 
   <div class="filter-bar">
     <button class="filter-btn active" data-site="all">全て</button>
@@ -26,7 +44,8 @@
     <button class="filter-btn" data-site="HOMES">ホームズ</button>
   </div>
 
-  <div id="favorites-view" class="popup-view">
+  <main class="popup-scroll">
+    <div id="favorites-view" class="popup-view">
     <div class="sort-bar">
       <label for="sort-select" class="sort-label">並び順</label>
       <select id="sort-select" class="sort-select">
@@ -36,11 +55,6 @@
         <option value="tsubo_asc">坪単価が安い順</option>
         <option value="updated_desc">価格改定が新しい順</option>
       </select>
-    </div>
-
-    <div class="watch-bar">
-      <button id="recheck-favorites" class="watch-action" type="button">価格を再チェック</button>
-      <span id="recheck-status" class="watch-status" aria-live="polite"></span>
     </div>
 
     <section class="loan-settings" aria-label="住宅ローン条件">
@@ -77,21 +91,36 @@
     <div id="empty-message" class="empty-message" style="display: none;">
       お気に入りはまだありません
     </div>
-  </div>
-
-  <div id="compare-view" class="popup-view" hidden>
-    <div id="compare-board" class="compare-board"></div>
-    <div id="compare-empty-message" class="empty-message" style="display: none;">
-      比較できるお気に入りはまだありません
     </div>
-  </div>
 
-  <div id="checklist-view" class="popup-view" hidden>
-    <div id="checklist-list" class="checklist-list"></div>
-    <div id="checklist-empty-message" class="empty-message" style="display: none;">
-      内見チェックできるお気に入りはまだありません
+    <div id="compare-view" class="popup-view" hidden>
+      <div id="compare-board" class="compare-board"></div>
+      <div id="compare-empty-message" class="empty-message" style="display: none;">
+        比較できるお気に入りはまだありません
+      </div>
     </div>
+
+    <div id="checklist-view" class="popup-view" hidden>
+      <div id="checklist-list" class="checklist-list"></div>
+      <div id="checklist-empty-message" class="empty-message" style="display: none;">
+        内見チェックできるお気に入りはまだありません
+      </div>
+    </div>
+
+    <div class="site-badge-preview" aria-label="サイト上のバッジ例">
+      <span>サイト上のバッジ</span>
+      <strong>坪単価 362万円</strong>
+      <strong>月額 30.1万円</strong>
+      <em>修繕 要確認</em>
+    </div>
+  </main>
+
+  <div class="popup-action-bar">
+    <button id="recheck-favorites" class="popup-action" type="button">再チェック</button>
+    <button id="export-favorites-csv" class="popup-action" type="button">CSV</button>
+    <button id="open-side-panel" class="popup-action popup-action--primary" type="button">Side Panelで比較</button>
   </div>
+  <span id="recheck-status" class="watch-status" aria-live="polite"></span>
 
   <div id="release-notes-dialog" class="release-notes-dialog" role="dialog" aria-modal="true" aria-labelledby="release-notes-title" hidden>
     <div class="release-notes-panel">

@@ -27,6 +27,7 @@ jobs:
         run: |
           node --check content.js
           node --check popup.js
+          node --check sidepanel.js
           node --check background.js
           node --check tests/e2e_extension.js
           node test_csv_export.js

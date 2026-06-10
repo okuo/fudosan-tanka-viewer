@@ -19,6 +19,9 @@ Copy-Item "styles.css" "dist/"
 Copy-Item "popup.html" "dist/"
 Copy-Item "popup.js" "dist/"
 Copy-Item "popup.css" "dist/"
+Copy-Item "sidepanel.html" "dist/"
+Copy-Item "sidepanel.js" "dist/"
+Copy-Item "sidepanel.css" "dist/"
 Copy-Item -Recurse "icons" "dist/"
 
 # Remove old zip if exists

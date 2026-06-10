@@ -12,6 +12,7 @@ fi
 
 "$NODE_BIN" --check content.js
 "$NODE_BIN" --check popup.js
+"$NODE_BIN" --check sidepanel.js
 "$NODE_BIN" --check background.js
 "$NODE_BIN" --check tests/e2e_extension.js
 "$NODE_BIN" test_csv_export.js

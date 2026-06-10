@@ -27,7 +27,7 @@ jobs:
       - name: Check required files exist
         run: |
           missing=0
-          for f in background.js content.js styles.css manifest.json popup.html popup.js popup.css icons/icon16.png icons/icon48.png icons/icon128.png; do
+          for f in background.js content.js styles.css manifest.json popup.html popup.js popup.css sidepanel.html sidepanel.js sidepanel.css icons/icon16.png icons/icon48.png icons/icon128.png; do
             if [ ! -f "$f" ]; then
               echo "::error::Required file missing: $f"
               missing=1
@@ -40,6 +40,7 @@ jobs:
         run: |
           node --check content.js
           node --check popup.js
+          node --check sidepanel.js
           node --check background.js
           node --check tests/e2e_extension.js
           node test_csv_export.js

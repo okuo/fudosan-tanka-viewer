@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
   "name": "不動産坪単価・平米単価表示",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "description": "SUUMO、三井のリハウス、アットホーム、ホームズで坪単価・平米単価・月々概算・価格改定・物件比較を自動表示します",
-  "permissions": ["storage", "alarms", "notifications"],
+  "permissions": ["storage", "alarms", "notifications", "sidePanel"],
   "host_permissions": [
     "*://*.suumo.jp/*",
     "*://*.rehouse.co.jp/*",
@@ -25,6 +25,9 @@
   ],
   "background": {
     "service_worker": "background.js"
+  },
+  "side_panel": {
+    "default_path": "sidepanel.html"
   },
   "action": {
     "default_popup": "popup.html",

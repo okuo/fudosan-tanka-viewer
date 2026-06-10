@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>坪たん Side Panel</title>
+  <link rel="stylesheet" href="sidepanel.css">
+</head>
+<body>
+  <header class="side-header">
+    <div class="side-brand">
+      <img src="icons/icon32.png" alt="" class="side-brand-icon">
+      <h1>坪たん</h1>
+    </div>
+    <label class="side-search">
+      <span class="sr-only">物件検索</span>
+      <input id="side-search-input" type="search" placeholder="物件名・駅名・エリアで検索">
+    </label>
+    <button id="side-recheck" class="side-icon-action" type="button" aria-label="価格を再チェック">更新</button>
+    <span id="side-last-checked" class="side-last-checked">最終確認 -</span>
+  </header>
+
+  <nav class="side-tabs" role="tablist" aria-label="表示切替">
+    <button class="side-tab" type="button" data-view="candidates" role="tab" aria-selected="false">候補</button>
+    <button class="side-tab active" type="button" data-view="compare" role="tab" aria-selected="true">比較</button>
+    <button class="side-tab" type="button" data-view="checklist" role="tab" aria-selected="false">内見</button>
+    <button class="side-tab" type="button" data-view="watch" role="tab" aria-selected="false">価格ウォッチ</button>
+  </nav>
+
+  <section class="side-summary" aria-label="候補サマリー">
+    <div>
+      <span>お気に入り</span>
+      <strong id="side-summary-total">0</strong>
+    </div>
+    <div>
+      <span>比較中</span>
+      <strong id="side-summary-compare">0</strong>
+    </div>
+    <div class="side-summary-good">
+      <span>値下がり</span>
+      <strong id="side-summary-drops">0</strong>
+    </div>
+    <div class="side-summary-risk">
+      <span>要注意</span>
+      <strong id="side-summary-risk">0</strong>
+    </div>
+  </section>
+
+  <main class="side-main">
+    <section id="candidates-panel" class="side-panel-view" hidden>
+      <div id="candidate-list" class="candidate-list"></div>
+      <p id="candidate-empty" class="side-empty" hidden>候補はまだありません。</p>
+    </section>
+
+    <section id="compare-panel" class="side-panel-view">
+      <div id="side-compare-board" class="side-compare-board"></div>
+      <p id="compare-empty" class="side-empty" hidden>比較できる候補はまだありません。</p>
+    </section>
+
+    <section id="checklist-panel" class="side-panel-view" hidden>
+      <div id="side-checklist-list" class="side-checklist-list"></div>
+      <p id="checklist-empty" class="side-empty" hidden>内見チェックできる候補はまだありません。</p>
+    </section>
+
+    <section id="watch-panel" class="side-panel-view" hidden>
+      <div id="side-watch-list" class="side-watch-list"></div>
+      <p id="watch-empty" class="side-empty" hidden>価格ウォッチできる候補はまだありません。</p>
+    </section>
+
+    <section id="selected-detail" class="selected-detail" aria-label="選択中の物件"></section>
+
+    <section class="site-badge-sample" aria-label="サイト上のバッジ表示例">
+      <div class="badge-sample-label">サイト上でのバッジ表示</div>
+      <div class="badge-sample-body">
+        <span class="badge-sample-logo">坪たん</span>
+        <strong>坪単価 362万円</strong>
+        <strong>月額 30.1万円</strong>
+        <em>修繕 要確認</em>
+      </div>
+    </section>
+  </main>
+
+  <footer class="side-actions">
+    <button id="open-selected-detail" class="side-action-card" type="button">
+      <strong>詳細を開く</strong>
+      <span>物件ページへ</span>
+    </button>
+    <button id="export-side-csv" class="side-action-card" type="button">
+      <strong>CSV出力</strong>
+      <span>比較データを出力</span>
+    </button>
+    <button id="open-checklist-view" class="side-action-card" type="button">
+      <strong>内見メモ</strong>
+      <span>確認・編集</span>
+    </button>
+  </footer>
+
+  <div id="side-status" class="side-status" aria-live="polite"></div>
+
+  <script src="sidepanel.js"></script>
+</body>
+</html>
