@@ -29,6 +29,11 @@ const DEFAULT_HIGHLIGHT_SETTINGS = {
   monthlyCostLimit: ''
 };
 
+const AI_PROPERTY_MEMOS_STORAGE_KEY = 'aiPropertyMemos';
+const AI_PROPERTY_MEMOS_LIMIT = 50;
+const AI_PROPERTY_MEMO_MAX_FACTS = 26;
+const AI_PROPERTY_MEMO_MAX_SNIPPETS = 6;
+
 let currentLoanSettings = { ...DEFAULT_LOAN_SETTINGS };
 let currentHighlightSettings = { ...DEFAULT_HIGHLIGHT_SETTINGS };
 
@@ -790,7 +795,7 @@ function displayMonthlyCost(priceMan) {
   // 挿入位置: 修繕積立金表示の下、なければ坪単価表示の下
   if (SITE_TYPE === 'SUUMO') {
     const repairFundEl = document.querySelector('.mt7.b ~ .fudosan-repair-fund');
-    const unitPriceEl = document.querySelector('.mt7.b + .fudosan-unit-price:not(.fudosan-repair-fund)');
+    const unitPriceEl = document.querySelector('.mt7.b + .fudosan-unit-price:not(.fudosan-repair-fund):not(.fudosan-ai-memo)');
     const insertAfter = repairFundEl || unitPriceEl;
     if (insertAfter && insertAfter.parentElement) {
       if (insertAfter.nextSibling) {
@@ -803,7 +808,7 @@ function displayMonthlyCost(priceMan) {
   } else {
     // REHOUSE, ATHOME, HOMES: 修繕積立金表示の下、なければ坪単価表示の下
     const repairFundEl = document.querySelector('.fudosan-repair-fund');
-    const unitPriceEl = document.querySelector('.fudosan-unit-price:not(.fudosan-repair-fund):not(.fudosan-monthly-cost)');
+    const unitPriceEl = document.querySelector('.fudosan-unit-price:not(.fudosan-repair-fund):not(.fudosan-monthly-cost):not(.fudosan-loan-sim):not(.fudosan-ai-memo)');
     const insertAfter = repairFundEl || unitPriceEl;
     if (insertAfter && insertAfter.parentElement) {
       if (insertAfter.nextSibling) {
@@ -813,6 +818,543 @@ function displayMonthlyCost(priceMan) {
       }
       log('月額コストを坪単価表示の下に挿入');
     }
+  }
+}
+
+// ============================================================
+// AI物件メモ（Gemini Nano / Prompt API）
+// ============================================================
+
+function getLanguageModelApi() {
+  if (typeof LanguageModel !== 'undefined') {
+    return LanguageModel;
+  }
+  if (globalThis.ai?.languageModel) {
+    return globalThis.ai.languageModel;
+  }
+  if (globalThis.ai?.createTextSession) {
+    return {
+      availability: async () => 'available',
+      create: () => globalThis.ai.createTextSession()
+    };
+  }
+  return null;
+}
+
+function compactAiMemoText(text, maxLength = 120) {
+  const compact = normalizeTableText(text);
+  if (!compact) return '';
+  return compact.length > maxLength ? `${compact.slice(0, maxLength)}...` : compact;
+}
+
+function getTextWithoutFudosanUi(element) {
+  if (!element?.cloneNode) return element?.textContent || '';
+  const clone = element.cloneNode(true);
+  clone.querySelectorAll?.('.fudosan-unit-price').forEach(el => el.remove());
+  return clone.textContent || '';
+}
+
+function collectAiMemoTableFacts() {
+  const preferredLabels = [
+    '所在地',
+    '交通',
+    '間取り',
+    '築年月',
+    '所在階',
+    '階建',
+    '向き',
+    'バルコニー',
+    '総戸数',
+    '構造',
+    '管理費',
+    '修繕積立金',
+    '修繕積立基金',
+    'その他費用',
+    '引渡',
+    '現況',
+    '管理形態',
+    '管理方式',
+    '用途地域',
+    '駐車場',
+    '施工会社',
+    'リフォーム',
+    'リノベーション',
+    '権利',
+    'ペット',
+    '備考',
+    '特記事項'
+  ];
+  const facts = [];
+  const seen = new Set();
+
+  walkLabeledValues(document, ({ labelText, valueText, valueCell }) => {
+    if (facts.length >= AI_PROPERTY_MEMO_MAX_FACTS) return;
+    if (!preferredLabels.some(label => labelText.includes(label))) return;
+
+    const label = compactAiMemoText(labelText, 28);
+    const value = compactAiMemoText(valueCell ? getTextWithoutFudosanUi(valueCell) : valueText, 140);
+    if (!label || !value) return;
+
+    const key = `${label}:${value}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    facts.push({ label, value });
+  });
+
+  return facts;
+}
+
+function collectAiMemoDescriptionSnippets() {
+  const keywords = [
+    'おすすめ',
+    '特徴',
+    'リフォーム',
+    'リノベーション',
+    '眺望',
+    '日当たり',
+    '陽当',
+    '南向き',
+    '角住戸',
+    '最上階',
+    'ペット',
+    '管理',
+    '耐震',
+    '制限',
+    '備考',
+    '特記事項'
+  ];
+  const snippets = [];
+  const seen = new Set();
+  const candidates = Array.from(document.querySelectorAll('p, li, dd, td'));
+
+  for (const element of candidates) {
+    if (snippets.length >= AI_PROPERTY_MEMO_MAX_SNIPPETS) break;
+    if (element.closest('.fudosan-unit-price')) continue;
+
+    const text = compactAiMemoText(element.textContent, 150);
+    if (text.length < 12 || text.length > 150) continue;
+    if (!keywords.some(keyword => text.includes(keyword))) continue;
+    if (seen.has(text)) continue;
+
+    seen.add(text);
+    snippets.push(text);
+  }
+
+  return snippets;
+}
+
+function createAiPropertyMemoContext(detail) {
+  return {
+    ...detail,
+    tableFacts: collectAiMemoTableFacts(),
+    snippets: collectAiMemoDescriptionSnippets()
+  };
+}
+
+function formatAiMemoYen(amount) {
+  return amount ? `${amount.toLocaleString()}円/月` : '';
+}
+
+function buildAiMemoFactLines(context) {
+  const lines = [];
+  const add = (label, value) => {
+    if (value === null || value === undefined || value === '') return;
+    lines.push(`- ${label}: ${value}`);
+  };
+
+  add('サイト', SITE_TYPE);
+  add('物件名', context.name || '');
+  add('価格', formatPriceMan(context.price));
+  add('専有面積', context.area ? `${context.area.toLocaleString()}㎡` : '');
+  add('坪単価', context.tsuboPrice ? `${context.tsuboPrice.toLocaleString()}万円/坪` : '');
+  add('平米単価', context.heiheiPrice ? `${context.heiheiPrice.toLocaleString()}万円/㎡` : '');
+  add('管理費', formatAiMemoYen(context.managementFee));
+  add('修繕積立金', formatAiMemoYen(context.repairFund));
+
+  if (context.repairFundRisk) {
+    add(
+      '修繕積立金評価',
+      `${context.repairFundRisk.perSqm}円/㎡/月、目安${context.repairFundRisk.guideline}円/㎡、${context.repairFundRisk.label}（${context.repairFundRisk.ratioPercent}%）`
+    );
+  }
+
+  if (context.monthlyCost?.totalMonthly) {
+    add('月額コスト概算', `${context.monthlyCost.totalMonthly.toLocaleString()}円/月`);
+  }
+
+  add('築年数', context.age || '');
+  add('駅距離', context.station || '');
+
+  context.tableFacts.forEach(({ label, value }) => add(label, value));
+  context.snippets.forEach((snippet, index) => add(`本文抜粋${index + 1}`, snippet));
+
+  return lines.slice(0, AI_PROPERTY_MEMO_MAX_FACTS + 12);
+}
+
+function createAiMemoSourceHash(context) {
+  const source = JSON.stringify({
+    url: context.url,
+    price: context.price,
+    area: context.area,
+    tsuboPrice: context.tsuboPrice,
+    heiheiPrice: context.heiheiPrice,
+    managementFee: context.managementFee,
+    repairFund: context.repairFund,
+    repairFundRisk: context.repairFundRisk,
+    tableFacts: context.tableFacts,
+    snippets: context.snippets
+  });
+  let hash = 0;
+  for (let i = 0; i < source.length; i++) {
+    hash = ((hash << 5) - hash + source.charCodeAt(i)) | 0;
+  }
+  return String(hash >>> 0);
+}
+
+function buildAiPropertyMemoPrompt(context) {
+  const factLines = buildAiMemoFactLines(context).join('\n');
+  return [
+    'あなたは中古マンション購入検討者向けに、物件ページから短い確認メモを作るアシスタントです。',
+    '以下の事実だけを根拠にしてください。推測を断定しないでください。買うべき/買わないべきという結論や価格査定は書かないでください。',
+    '不足情報や追加確認が必要な点は「questions」に入れてください。',
+    '日本語で、各項目は28文字から55文字程度、最大3件ずつにしてください。',
+    '返答は次のJSONだけにしてください: {"positives":["..."],"cautions":["..."],"questions":["..."]}',
+    '',
+    '物件情報:',
+    factLines || '- 取得できた物件情報が少ない'
+  ].join('\n');
+}
+
+function getAiMemoResponseSchema() {
+  return {
+    type: 'object',
+    properties: {
+      positives: {
+        type: 'array',
+        items: { type: 'string' }
+      },
+      cautions: {
+        type: 'array',
+        items: { type: 'string' }
+      },
+      questions: {
+        type: 'array',
+        items: { type: 'string' }
+      }
+    },
+    required: ['positives', 'cautions', 'questions'],
+    additionalProperties: false
+  };
+}
+
+function normalizeAiMemoItems(items, fallback) {
+  const rawItems = Array.isArray(items)
+    ? items
+    : typeof items === 'string'
+      ? items.split(/\n|。/)
+      : [];
+  const normalized = [];
+  const seen = new Set();
+
+  rawItems.forEach((item) => {
+    const text = compactAiMemoText(String(item || '').replace(/^[\s\-*・0-9０-９.)）]+/, ''), 70);
+    if (!text || seen.has(text)) return;
+    seen.add(text);
+    normalized.push(text);
+  });
+
+  return normalized.slice(0, 3).length > 0 ? normalized.slice(0, 3) : [fallback];
+}
+
+function normalizeAiMemo(rawMemo) {
+  return {
+    positives: normalizeAiMemoItems(rawMemo?.positives, '物件情報から明確な良い点は抽出できませんでした'),
+    cautions: normalizeAiMemoItems(rawMemo?.cautions, '大きな注意点は抽出できませんでしたが、原文確認をおすすめします'),
+    questions: normalizeAiMemoItems(rawMemo?.questions, '管理状況や修繕履歴などを追加確認すると安心です')
+  };
+}
+
+function parseAiMemoResponse(responseText) {
+  if (typeof responseText === 'object' && responseText !== null) {
+    return normalizeAiMemo(responseText);
+  }
+
+  const rawText = String(responseText || '').trim();
+  const cleaned = rawText
+    .replace(/^```(?:json)?/i, '')
+    .replace(/```$/i, '')
+    .trim();
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+
+  if (jsonMatch) {
+    try {
+      return normalizeAiMemo(JSON.parse(jsonMatch[0]));
+    } catch (error) {
+      logError('AI物件メモのJSON解析に失敗:', error);
+    }
+  }
+
+  return normalizeAiMemo({
+    positives: [cleaned || 'AIメモを生成できませんでした'],
+    cautions: [],
+    questions: []
+  });
+}
+
+async function getAiPropertyMemoRecords() {
+  const result = await getStorageData({ [AI_PROPERTY_MEMOS_STORAGE_KEY]: [] });
+  return Array.isArray(result[AI_PROPERTY_MEMOS_STORAGE_KEY])
+    ? result[AI_PROPERTY_MEMOS_STORAGE_KEY]
+    : [];
+}
+
+async function loadAiPropertyMemo(url) {
+  const records = await getAiPropertyMemoRecords();
+  return records.find(record => record.url === url) || null;
+}
+
+async function saveAiPropertyMemo(url, memo, sourceHash) {
+  const records = await getAiPropertyMemoRecords();
+  const nextRecords = [
+    {
+      url,
+      memo,
+      sourceHash,
+      generatedAt: new Date().toISOString()
+    },
+    ...records.filter(record => record.url !== url)
+  ].slice(0, AI_PROPERTY_MEMOS_LIMIT);
+
+  await setStorageData({ [AI_PROPERTY_MEMOS_STORAGE_KEY]: nextRecords });
+  return nextRecords[0];
+}
+
+function setAiMemoStatus(container, message, tone = '') {
+  const status = container.querySelector('.ai-memo-status');
+  if (!status) return;
+  status.textContent = message;
+  status.dataset.tone = tone;
+}
+
+function setAiMemoButtonState(container, { loading = false, hasMemo = false, disabled = false } = {}) {
+  const button = container.querySelector('.ai-memo-generate-btn');
+  if (!button) return;
+  const apiUnavailable = container.dataset.aiMemoUnavailable === 'true';
+  button.disabled = loading || disabled || apiUnavailable;
+  button.textContent = loading ? '生成中...' : hasMemo ? '再生成' : '生成';
+}
+
+function renderAiMemoPlaceholder(container, message) {
+  const body = container.querySelector('.ai-memo-body');
+  if (!body) return;
+  body.textContent = message;
+}
+
+function renderAiMemoResult(container, memo, generatedAt) {
+  const body = container.querySelector('.ai-memo-body');
+  if (!body) return;
+
+  body.textContent = '';
+  [
+    ['良い点', memo.positives],
+    ['注意点', memo.cautions],
+    ['確認したいこと', memo.questions]
+  ].forEach(([title, items]) => {
+    const group = document.createElement('div');
+    group.className = 'ai-memo-group';
+
+    const heading = document.createElement('div');
+    heading.className = 'ai-memo-group-title';
+    heading.textContent = title;
+    group.appendChild(heading);
+
+    const list = document.createElement('ul');
+    list.className = 'ai-memo-list';
+    items.forEach((item) => {
+      const li = document.createElement('li');
+      li.textContent = item;
+      list.appendChild(li);
+    });
+    group.appendChild(list);
+    body.appendChild(group);
+  });
+
+  const generatedLabel = generatedAt
+    ? `生成済み ${new Date(generatedAt).toLocaleString('ja-JP', {
+      month: 'numeric',
+      day: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    })}`
+    : '生成済み';
+  setAiMemoStatus(container, generatedLabel, 'success');
+  setAiMemoButtonState(container, { hasMemo: true });
+}
+
+async function promptAiPropertyMemo(session, prompt) {
+  if (!session?.prompt) {
+    throw new Error('Prompt APIのセッションを作成できませんでした');
+  }
+
+  try {
+    return await session.prompt(prompt, {
+      responseConstraint: getAiMemoResponseSchema(),
+      omitResponseConstraintInput: true
+    });
+  } catch (error) {
+    logError('AI物件メモの構造化出力に失敗。通常プロンプトで再試行します:', error);
+    return session.prompt(`${prompt}\n\nJSON以外の文章は書かず、必ずJSONだけで返してください。`);
+  }
+}
+
+async function generateAiPropertyMemo(context, onProgress) {
+  const languageModel = getLanguageModelApi();
+  if (!languageModel?.create) {
+    throw new Error('このChromeではGemini NanoのPrompt APIが利用できません');
+  }
+
+  if (languageModel.availability) {
+    const availability = await languageModel.availability();
+    if (availability === 'unavailable') {
+      throw new Error('この端末ではGemini Nanoを利用できません');
+    }
+    if (availability === 'downloadable') {
+      onProgress('初回モデルを準備しています...');
+    } else if (availability === 'downloading') {
+      onProgress('Gemini Nanoをダウンロード中です...');
+    }
+  }
+
+  const createOptions = {
+    monitor(monitor) {
+      monitor.addEventListener('downloadprogress', (event) => {
+        const percent = Math.round((event.loaded || 0) * 100);
+        onProgress(percent > 0 ? `Gemini Nanoを準備中 ${percent}%` : 'Gemini Nanoを準備中です...');
+      });
+    }
+  };
+
+  let session = null;
+  try {
+    onProgress('物件情報を整理しています...');
+    try {
+      session = await languageModel.create(createOptions);
+    } catch (error) {
+      logError('monitor付きセッション作成に失敗。通常作成で再試行します:', error);
+      session = await languageModel.create();
+    }
+
+    onProgress('AIメモを生成しています...');
+    const response = await promptAiPropertyMemo(session, buildAiPropertyMemoPrompt(context));
+    return parseAiMemoResponse(response);
+  } finally {
+    if (session?.destroy) {
+      session.destroy();
+    }
+  }
+}
+
+function createAiPropertyMemoElement(context, sourceHash) {
+  const container = document.createElement('div');
+  container.className = 'fudosan-unit-price fudosan-ai-memo';
+
+  const header = document.createElement('div');
+  header.className = 'ai-memo-header';
+  header.innerHTML = `
+    <div class="ai-memo-title-wrap">
+      <span class="ai-memo-title">AI物件メモ</span>
+      <span class="ai-memo-badge">Gemini Nano</span>
+    </div>
+    <button type="button" class="ai-memo-generate-btn">生成</button>
+  `;
+  container.appendChild(header);
+
+  const status = document.createElement('div');
+  status.className = 'ai-memo-status';
+  status.textContent = 'Chrome内蔵AIでローカル生成できます';
+  container.appendChild(status);
+
+  const body = document.createElement('div');
+  body.className = 'ai-memo-body';
+  body.textContent = '良い点・注意点・確認したいことを、ページ上の情報から短く整理します。';
+  container.appendChild(body);
+
+  const note = document.createElement('div');
+  note.className = 'ai-memo-note';
+  note.textContent = 'AI生成のため、重要事項は必ず物件概要と仲介会社で確認してください。';
+  container.appendChild(note);
+
+  const button = container.querySelector('.ai-memo-generate-btn');
+  button.addEventListener('click', async () => {
+    setAiMemoButtonState(container, { loading: true });
+    setAiMemoStatus(container, '対応状況を確認しています...');
+
+    try {
+      const memo = await generateAiPropertyMemo(context, message => setAiMemoStatus(container, message));
+      const savedRecord = await saveAiPropertyMemo(context.url, memo, sourceHash);
+      renderAiMemoResult(container, memo, savedRecord.generatedAt);
+    } catch (error) {
+      logError('AI物件メモ生成エラー:', error);
+      renderAiMemoPlaceholder(container, error.message || 'AIメモを生成できませんでした');
+      setAiMemoStatus(container, '生成できませんでした', 'error');
+      setAiMemoButtonState(container, {
+        hasMemo: Boolean(container.querySelector('.ai-memo-group')),
+        disabled: false
+      });
+    }
+  });
+
+  return container;
+}
+
+function getAiMemoInsertAnchor() {
+  if (SITE_TYPE === 'SUUMO') {
+    return document.querySelector('.mt7.b ~ .fudosan-loan-sim') ||
+      document.querySelector('.mt7.b ~ .fudosan-monthly-cost') ||
+      document.querySelector('.mt7.b ~ .fudosan-repair-fund') ||
+      document.querySelector('.mt7.b + .fudosan-unit-price:not(.fudosan-ai-memo):not(.fudosan-unit-price--compact)');
+  }
+
+  return document.querySelector('.fudosan-loan-sim') ||
+    document.querySelector('.fudosan-monthly-cost') ||
+    document.querySelector('.fudosan-repair-fund') ||
+    document.querySelector('.fudosan-unit-price:not(.fudosan-ai-memo):not(.fudosan-unit-price--compact)');
+}
+
+function displayAiPropertyMemo(context) {
+  if (!context?.url) return;
+
+  const existing = document.querySelector('.fudosan-ai-memo');
+  if (existing) existing.remove();
+
+  const anchor = getAiMemoInsertAnchor();
+  if (!anchor?.parentElement) {
+    log('AI物件メモの挿入先が見つかりません');
+    return;
+  }
+
+  const sourceHash = createAiMemoSourceHash(context);
+  const container = createAiPropertyMemoElement(context, sourceHash);
+
+  if (anchor.nextSibling) {
+    anchor.parentElement.insertBefore(container, anchor.nextSibling);
+  } else {
+    anchor.parentElement.appendChild(container);
+  }
+
+  loadAiPropertyMemo(context.url).then((record) => {
+    if (!document.body.contains(container)) return;
+    if (record?.memo && record.sourceHash === sourceHash) {
+      renderAiMemoResult(container, normalizeAiMemo(record.memo), record.generatedAt);
+    } else if (record?.memo) {
+      setAiMemoStatus(container, '物件情報が変わった可能性があります。再生成できます', 'warn');
+    }
+  });
+
+  if (!getLanguageModelApi()?.create) {
+    container.dataset.aiMemoUnavailable = 'true';
+    setAiMemoStatus(container, 'このChromeではGemini NanoのPrompt APIが未対応です', 'warn');
+    setAiMemoButtonState(container, { disabled: true });
   }
 }
 
@@ -953,7 +1495,7 @@ function displayLoanSimulation(priceMan) {
   if (SITE_TYPE === 'SUUMO') {
     const monthlyCostEl = document.querySelector('.mt7.b ~ .fudosan-monthly-cost');
     const repairFundEl = document.querySelector('.mt7.b ~ .fudosan-repair-fund');
-    const unitPriceEl = document.querySelector('.mt7.b + .fudosan-unit-price:not(.fudosan-repair-fund):not(.fudosan-monthly-cost)');
+    const unitPriceEl = document.querySelector('.mt7.b + .fudosan-unit-price:not(.fudosan-repair-fund):not(.fudosan-monthly-cost):not(.fudosan-ai-memo)');
     const insertAfter = monthlyCostEl || repairFundEl || unitPriceEl;
     if (insertAfter && insertAfter.parentElement) {
       if (insertAfter.nextSibling) {
@@ -966,7 +1508,7 @@ function displayLoanSimulation(priceMan) {
   } else {
     const monthlyCostEl = document.querySelector('.fudosan-monthly-cost');
     const repairFundEl = document.querySelector('.fudosan-repair-fund');
-    const unitPriceEl = document.querySelector('.fudosan-unit-price:not(.fudosan-repair-fund):not(.fudosan-monthly-cost):not(.fudosan-loan-sim)');
+    const unitPriceEl = document.querySelector('.fudosan-unit-price:not(.fudosan-repair-fund):not(.fudosan-monthly-cost):not(.fudosan-loan-sim):not(.fudosan-ai-memo)');
     const insertAfter = monthlyCostEl || repairFundEl || unitPriceEl;
     if (insertAfter && insertAfter.parentElement) {
       if (insertAfter.nextSibling) {
@@ -1285,7 +1827,7 @@ function insertUnitPriceAfterElement(targetElement, unitPriceDiv) {
   }
 
   // 既存の単価表示を削除
-  const existing = targetElement.parentElement.querySelector('.fudosan-unit-price');
+  const existing = targetElement.parentElement.querySelector('.fudosan-unit-price:not(.fudosan-ai-memo)');
   if (existing) existing.remove();
 
   // 対象要素の直後に挿入
@@ -1925,6 +2467,7 @@ function processDetailPage() {
   let detailPrice = null;
   let detailArea = null;
   let priceElement = null;
+  let aiPropertyMemoContext = null;
 
   if (SITE_TYPE === 'REHOUSE') {
     // 三井のリハウス詳細ページ
@@ -2013,6 +2556,7 @@ function processDetailPage() {
     const detailName = document.querySelector('h1')?.textContent?.trim() || '';
     const detailFees = extractManagementAndRepairFees();
     const detailRepairFundInfo = extractDetailRepairFundInfo(detailArea);
+    const detailRepairFundRisk = createRepairFundRiskSummary(detailRepairFundInfo.result);
     const detailMonthlyCost = calculateMonthlyCostBreakdown(detailPrice, detailFees);
     const detailText = document.body.textContent || '';
     const favoriteInfo = {
@@ -2023,11 +2567,25 @@ function processDetailPage() {
       area: detailArea,
       managementFee: detailFees.managementFee,
       repairFund: detailFees.repairFund,
-      repairFundRisk: createRepairFundRiskSummary(detailRepairFundInfo.result),
+      repairFundRisk: detailRepairFundRisk,
       monthlyCost: detailMonthlyCost.totalMonthly || null,
       age: extractAgeTextFromProperty(detailText),
       station: extractStationTextFromProperty(detailText)
     };
+    aiPropertyMemoContext = createAiPropertyMemoContext({
+      url: detailUrl,
+      name: detailName,
+      price: detailPrice,
+      area: detailArea,
+      tsuboPrice,
+      heiheiPrice,
+      managementFee: detailFees.managementFee,
+      repairFund: detailFees.repairFund,
+      repairFundRisk: detailRepairFundRisk,
+      monthlyCost: detailMonthlyCost,
+      age: favoriteInfo.age,
+      station: favoriteInfo.station
+    });
     syncFavoritePropertyData(favoriteInfo);
 
     // 上部の価格表示の下に追加
@@ -2059,7 +2617,7 @@ function processDetailPage() {
           infoSection.appendChild(wrapper);
         }
         // 既存の坪単価バッジのみ削除
-        const existing = wrapper.querySelector('.fudosan-unit-price:not(.fudosan-repair-fund):not(.fudosan-monthly-cost):not(.fudosan-loan-sim)');
+        const existing = wrapper.querySelector('.fudosan-unit-price:not(.fudosan-repair-fund):not(.fudosan-monthly-cost):not(.fudosan-loan-sim):not(.fudosan-ai-memo)');
         if (existing) existing.remove();
         wrapper.insertBefore(unitPriceDiv, wrapper.firstChild);
       } else {
@@ -2122,6 +2680,11 @@ function processDetailPage() {
     displayLoanSimulation(detailPrice);
   }
 
+  // AI物件メモ
+  if (aiPropertyMemoContext) {
+    displayAiPropertyMemo(aiPropertyMemoContext);
+  }
+
   log('詳細ページ処理完了。単価表示数:', document.querySelectorAll('.fudosan-unit-price').length);
 }
 
@@ -2157,7 +2720,7 @@ function displayRepairFundPerSqm(area) {
   // 注意: insertUnitPriceAfterElementは既存の.fudosan-unit-priceを削除するため使わない
   if (SITE_TYPE === 'SUUMO') {
     // 上部の坪単価表示の後に挿入
-    const topUnitPrice = document.querySelector('.mt7.b + .fudosan-unit-price:not(.fudosan-repair-fund)');
+    const topUnitPrice = document.querySelector('.mt7.b + .fudosan-unit-price:not(.fudosan-repair-fund):not(.fudosan-ai-memo)');
     if (topUnitPrice && topUnitPrice.parentElement) {
       if (topUnitPrice.nextSibling) {
         topUnitPrice.parentElement.insertBefore(repairFundDiv, topUnitPrice.nextSibling);
@@ -2181,7 +2744,7 @@ function displayRepairFundPerSqm(area) {
     }
   } else {
     // REHOUSE, ATHOME, HOMES: 坪単価表示の後に挿入
-    const unitPriceEl = document.querySelector('.fudosan-unit-price:not(.fudosan-repair-fund)');
+    const unitPriceEl = document.querySelector('.fudosan-unit-price:not(.fudosan-repair-fund):not(.fudosan-monthly-cost):not(.fudosan-loan-sim):not(.fudosan-ai-memo)');
     if (unitPriceEl && unitPriceEl.parentElement) {
       if (unitPriceEl.nextSibling) {
         unitPriceEl.parentElement.insertBefore(repairFundDiv, unitPriceEl.nextSibling);
@@ -2228,8 +2791,12 @@ function observeDOMChanges() {
       if (mutation.addedNodes.length > 0) {
         // 追加されたノードをチェック
         for (const node of mutation.addedNodes) {
-          // 自分が追加した.fudosan-unit-price要素は無視
-          if (node.nodeType === 1 && !node.classList?.contains('fudosan-unit-price')) {
+          // 自分が追加したUI要素と、その内部更新は無視
+          const isOwnUiNode = node.nodeType === 1 && (
+            node.classList?.contains('fudosan-unit-price') ||
+            node.closest?.('.fudosan-unit-price')
+          );
+          if (node.nodeType === 1 && !isOwnUiNode) {
             shouldProcess = true;
             break;
           }

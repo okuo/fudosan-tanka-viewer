@@ -435,6 +435,134 @@
 }
 
 /* =============================================
+   AI Property Memo
+   ============================================= */
+
+.fudosan-ai-memo {
+  border-left-color: #0891b2;
+  background: #ecfeff;
+  display: block;
+  max-width: 430px;
+  white-space: normal;
+  line-height: 1.45;
+}
+
+.ai-memo-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.ai-memo-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.ai-memo-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: #0f766e;
+}
+
+.ai-memo-badge {
+  padding: 2px 6px;
+  border-radius: 999px;
+  background: rgba(8, 145, 178, 0.12);
+  color: #155e75;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.ai-memo-generate-btn {
+  flex-shrink: 0;
+  padding: 4px 9px;
+  border: 1px solid #67e8f9;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #0e7490;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.2;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 0.15s ease, border-color 0.15s ease, color 0.15s ease;
+}
+
+.ai-memo-generate-btn:hover:not(:disabled) {
+  background: #cffafe;
+  border-color: #22d3ee;
+  color: #155e75;
+}
+
+.ai-memo-generate-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.ai-memo-status {
+  margin-top: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #64748b;
+}
+
+.ai-memo-status[data-tone="success"] {
+  color: #047857;
+}
+
+.ai-memo-status[data-tone="warn"] {
+  color: #b45309;
+}
+
+.ai-memo-status[data-tone="error"] {
+  color: #dc2626;
+}
+
+.ai-memo-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 8px;
+  color: #334155;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.ai-memo-group-title {
+  font-size: 11px;
+  font-weight: 700;
+  color: #0f766e;
+}
+
+.ai-memo-list {
+  margin: 3px 0 0;
+  padding-left: 18px;
+}
+
+.ai-memo-list li {
+  margin: 0;
+  padding-left: 1px;
+}
+
+.ai-memo-list li + li {
+  margin-top: 2px;
+}
+
+.ai-memo-note {
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(103, 232, 249, 0.65);
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+/* =============================================
    Favorite Button
    ============================================= */
 
@@ -734,6 +862,7 @@
   }
 
   .fudosan-loan-sim,
+  .fudosan-ai-memo,
   .fudosan-csv-export-button,
   .fudosan-export-progress,
   .fudosan-favorite-btn,

@@ -36,6 +36,16 @@ const VIEWING_CHECKLIST_ITEMS = [
 
 const RELEASE_NOTES = [
   {
+    version: '1.11.0',
+    title: 'AI物件メモを追加',
+    items: [
+      '対応ChromeではGemini Nanoを使い、詳細ページ上で良い点・注意点・確認したいことをローカル生成できるようにしました。',
+      '物件概要、価格、面積、坪単価、管理費、修繕積立金、月額概算をもとに短い確認メモを作成します。',
+      '生成結果はブラウザ内に保存し、同じ物件を再訪したときにすぐ確認できるようにしました。',
+      'Prompt API未対応環境ではAI生成ボタンを無効化し、既存機能はそのまま利用できます。'
+    ]
+  },
+  {
     version: '1.10.1',
     title: 'Side Panelで比較しやすく刷新',
     items: [
