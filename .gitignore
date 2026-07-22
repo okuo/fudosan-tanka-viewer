@@ -6,6 +6,10 @@ Thumbs.db
 .vscode/
 .idea/
 
+# Codex isolated development
+.worktrees/
+.superpowers/
+
 # Temporary files
 *.tmp
 *.log

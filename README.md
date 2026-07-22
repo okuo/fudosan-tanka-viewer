@@ -38,18 +38,27 @@ SUUMO、三井のリハウス、アットホーム、ホームズの物件ペー
 2. **アイコン画像を準備**
    `icons/` フォルダに以下の画像を配置：
    - `icon16.png` (16x16px)
+   - `icon32.png` (32x32px)
    - `icon48.png` (48x48px)
    - `icon128.png` (128x128px)
 
    詳細は `icons/README.md` を参照
 
-3. Chromeで拡張機能を読み込む
+3. ローカル確認用ビルドを作成
+
+   ```bash
+   bash scripts/build-local.sh
+   ```
+
+   `dist/local` にはStore版と見分けやすいローカル版が生成されます。拡張機能名は `坪たん LOCAL`、ポップアップ上部は `LOCAL v...`、ツールバーの拡張アイコンには `DEV` バッジが表示されます。
+
+4. Chromeで拡張機能を読み込む
    - `chrome://extensions/` を開く
    - 右上の「デベロッパーモード」をON
    - 「パッケージ化されていない拡張機能を読み込む」をクリック
-   - このプロジェクトのフォルダを選択
+   - `dist/local` フォルダを選択
 
-4. 対応サイトの物件ページにアクセスして動作確認
+5. 対応サイトの物件ページにアクセスして動作確認
    - SUUMO: https://suumo.jp/ms/chuko/tokyo/
    - 三井のリハウス: https://www.rehouse.co.jp/buy/mansion/
    - アットホーム: https://www.athome.co.jp/mansion/chuko/
@@ -161,8 +170,9 @@ fudosan-tanka-viewer/
 ### コード更新時
 
 1. ファイルを編集
-2. `chrome://extensions/` で「更新」ボタンをクリック
-3. 対象サイトのページをリロード
+2. `bash scripts/build-local.sh` を再実行
+3. `chrome://extensions/` で「更新」ボタンをクリック
+4. 対象サイトのページをリロード
 
 ### テスト
 

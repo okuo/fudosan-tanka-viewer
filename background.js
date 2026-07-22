@@ -10,6 +10,7 @@ const FAVORITE_RECHECK_DELAY_MS = 2000;
 const RELEASE_NOTES_STORAGE_KEY = 'lastSeenReleaseNotesVersion';
 const RELEASE_NOTES_BADGE_VERSION_KEY = 'pendingReleaseNotesBadgeVersion';
 const RELEASE_NOTES_BADGE_TEXT = 'NEW';
+const LOCAL_BUILD_BADGE_TEXT = 'DEV';
 const PRICE_NOTIFICATION_TARGETS_KEY = 'priceChangeNotificationTargets';
 
 const LISTING_ENDED_PATTERNS = [
@@ -40,18 +41,44 @@ function delay(ms) {
   return new Promise(resolve => setTimeout(resolve, ms));
 }
 
+function getExtensionManifest() {
+  return chrome.runtime.getManifest?.() || {};
+}
+
+function isLocalBuild() {
+  const manifest = getExtensionManifest();
+  return /\blocal\b/i.test(manifest.version_name || '') ||
+    /\bLOCAL\b/.test(manifest.name || '') ||
+    /\bLOCAL\b/.test(manifest.action?.default_title || '');
+}
+
 function getCurrentVersion() {
-  return chrome.runtime.getManifest().version || '';
+  return getExtensionManifest().version || '';
+}
+
+async function setLocalBuildBadge() {
+  await chrome.action.setBadgeText({ text: LOCAL_BUILD_BADGE_TEXT });
+  await chrome.action.setBadgeBackgroundColor({ color: '#dc2626' });
+  await chrome.action.setBadgeTextColor?.({ color: '#ffffff' });
 }
 
 async function setReleaseNotesBadge() {
+  if (isLocalBuild()) {
+    await setLocalBuildBadge();
+    return;
+  }
+
   await chrome.action.setBadgeText({ text: RELEASE_NOTES_BADGE_TEXT });
   await chrome.action.setBadgeBackgroundColor({ color: '#2563eb' });
   await chrome.action.setBadgeTextColor?.({ color: '#ffffff' });
 }
 
 async function clearReleaseNotesBadge() {
-  await chrome.action.setBadgeText({ text: '' });
+  if (isLocalBuild()) {
+    await setLocalBuildBadge();
+  } else {
+    await chrome.action.setBadgeText({ text: '' });
+  }
   await setStorageData({ [RELEASE_NOTES_BADGE_VERSION_KEY]: '' });
 }
 
@@ -64,6 +91,11 @@ async function markReleaseNotesBadgePending() {
 }
 
 async function refreshReleaseNotesBadge() {
+  if (isLocalBuild()) {
+    await setLocalBuildBadge();
+    return;
+  }
+
   const currentVersion = getCurrentVersion();
   if (!currentVersion) return;
 
@@ -455,6 +487,11 @@ function ensureFavoriteRecheckAlarm() {
 if (typeof chrome !== 'undefined' && chrome.runtime?.onInstalled) {
   chrome.runtime.onInstalled.addListener((details) => {
     ensureFavoriteRecheckAlarm();
+
+    if (isLocalBuild()) {
+      setLocalBuildBadge().catch(error => console.warn('ローカル版バッジの設定に失敗しました', error));
+      return;
+    }
 
     if (details.reason === 'update') {
       markReleaseNotesBadgePending().catch(error => console.warn('更新バッジの設定に失敗しました', error));

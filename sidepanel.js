@@ -13,6 +13,8 @@ let selectedFavoriteUrl = '';
 let sideMemoSaveTimer = null;
 let sideChecklistSaveTimer = null;
 let sideRecheckInProgress = false;
+let sideSimilarAiSummary = null;
+let sideSimilarAiInProgress = false;
 
 const SIDE_DEFAULT_LOAN_SETTINGS = {
   annualRatePercent: 0.8,
@@ -149,6 +151,7 @@ function renderActiveSideView(favorites) {
   });
 
   renderCandidateList(favorites);
+  renderSimilarGroups(favorites);
   renderCompareBoard(favorites);
   renderChecklistView(favorites);
   renderWatchView(favorites);
@@ -291,6 +294,349 @@ function renderCompareBoard(favorites) {
   boardEl.appendChild(table);
 }
 
+function renderSimilarGroups(favorites) {
+  const groupsEl = document.getElementById('side-similar-groups');
+  const statusEl = document.getElementById('side-similar-status');
+  const button = document.getElementById('side-similar-ai');
+  if (!groupsEl || !statusEl || !button) return;
+
+  const groups = buildSimilarFavoriteGroups(favorites);
+  groupsEl.innerHTML = '';
+  button.disabled = groups.length === 0 || sideSimilarAiInProgress || !getSideLanguageModelApi()?.create;
+  button.textContent = sideSimilarAiInProgress ? '生成中...' : 'AI短評';
+
+  if (groups.length === 0) {
+    statusEl.textContent = favorites.length < 2 ? '候補が2件以上になると類似まとめを表示します。' : '強く似ている候補はまだ見つかりません。';
+    statusEl.dataset.tone = '';
+    return;
+  }
+
+  if (!getSideLanguageModelApi()?.create) {
+    statusEl.textContent = '類似グループを表示中。AI短評はこのChromeでは未対応です。';
+    statusEl.dataset.tone = 'warn';
+  } else if (sideSimilarAiSummary) {
+    statusEl.textContent = 'AI短評を表示中です。';
+    statusEl.dataset.tone = 'success';
+  } else {
+    statusEl.textContent = '類似グループを表示中。AI短評も生成できます。';
+    statusEl.dataset.tone = '';
+  }
+
+  groups.forEach((group, index) => {
+    const card = document.createElement('article');
+    card.className = 'side-similar-card';
+
+    const title = document.createElement('div');
+    title.className = 'side-similar-title';
+    title.textContent = group.title;
+    card.appendChild(title);
+
+    const reason = document.createElement('div');
+    reason.className = 'side-similar-reason';
+    reason.textContent = group.reasons.join(' / ');
+    card.appendChild(reason);
+
+    const items = document.createElement('div');
+    items.className = 'side-similar-items';
+    group.favorites.forEach((fav) => {
+      const buttonEl = document.createElement('button');
+      buttonEl.className = 'side-similar-item';
+      buttonEl.type = 'button';
+      buttonEl.addEventListener('click', () => {
+        selectedFavoriteUrl = fav.url;
+        renderSidePanel();
+      });
+
+      const name = document.createElement('strong');
+      name.textContent = fav.name || '(物件名不明)';
+      buttonEl.appendChild(name);
+
+      const meta = document.createElement('span');
+      meta.textContent = [
+        formatSidePrice(fav.currentPrice || fav.price),
+        fav.area ? `${fav.area}m²` : '',
+        fav.tsubotanka ? `坪${fav.tsubotanka.toLocaleString()}万` : '',
+        fav.station || ''
+      ].filter(Boolean).join(' / ');
+      buttonEl.appendChild(meta);
+      items.appendChild(buttonEl);
+    });
+    card.appendChild(items);
+
+    const aiComment = sideSimilarAiSummary?.summaries?.[index]?.comment;
+    if (aiComment) {
+      const comment = document.createElement('div');
+      comment.className = 'side-similar-ai-comment';
+      comment.textContent = aiComment;
+      card.appendChild(comment);
+    }
+
+    groupsEl.appendChild(card);
+  });
+}
+
+function normalizeSimilarText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .replace(/[Ａ-Ｚａ-ｚ０-９]/g, char => String.fromCharCode(char.charCodeAt(0) - 0xFEE0))
+    .replace(/中古マンション|マンション|売主|専任|一般|階|号室|室|棟/g, '')
+    .replace(/[()\[\]（）【】「」『』,\s　・･\-＿_]/g, '');
+}
+
+function getNameTokens(fav) {
+  const text = normalizeSimilarText(fav.name || '');
+  if (!text) return [];
+  const tokens = [];
+  for (let length = Math.min(8, text.length); length >= 3; length--) {
+    for (let i = 0; i <= text.length - length; i++) {
+      tokens.push(text.slice(i, i + length));
+    }
+  }
+  return Array.from(new Set(tokens)).slice(0, 80);
+}
+
+function getFavoriteSimilarity(a, b) {
+  const reasons = [];
+  let score = 0;
+  const aName = normalizeSimilarText(a.name || '');
+  const bName = normalizeSimilarText(b.name || '');
+  const stationA = normalizeSimilarText(a.station || '');
+  const stationB = normalizeSimilarText(b.station || '');
+
+  if (aName && bName && (aName.includes(bName) || bName.includes(aName))) {
+    score += 3.2;
+    reasons.push('物件名が近い');
+  } else {
+    const aTokens = getNameTokens(a);
+    const bTokenSet = new Set(getNameTokens(b));
+    const overlap = aTokens.filter(token => bTokenSet.has(token)).length;
+    if (overlap >= 2) {
+      score += Math.min(2.4, overlap * 0.55);
+      reasons.push('名称の共通部分あり');
+    }
+  }
+
+  if (stationA && stationB && stationA === stationB) {
+    score += 1.1;
+    reasons.push('駅距離表記が同じ');
+  }
+
+  const areaDiff = Math.abs(Number(a.area || 0) - Number(b.area || 0));
+  if (areaDiff > 0 && areaDiff <= 3) {
+    score += 1.2;
+    reasons.push('面積が近い');
+  } else if (areaDiff > 0 && areaDiff <= 8) {
+    score += 0.6;
+    reasons.push('面積帯が近い');
+  }
+
+  const priceDiff = Math.abs(Number(a.currentPrice || a.price || 0) - Number(b.currentPrice || b.price || 0));
+  if (priceDiff > 0 && priceDiff <= 500) {
+    score += 0.9;
+    reasons.push('価格が近い');
+  } else if (priceDiff > 0 && priceDiff <= 1500) {
+    score += 0.45;
+    reasons.push('価格帯が近い');
+  }
+
+  const tsuboDiff = Math.abs(Number(a.tsubotanka || 0) - Number(b.tsubotanka || 0));
+  if (tsuboDiff > 0 && tsuboDiff <= 20) {
+    score += 0.8;
+    reasons.push('坪単価が近い');
+  }
+
+  return { score, reasons: Array.from(new Set(reasons)) };
+}
+
+function buildSimilarFavoriteGroups(favorites) {
+  const candidates = favorites.filter(fav => fav.url && (fav.name || fav.station || fav.area || fav.price));
+  const parent = new Map(candidates.map(fav => [fav.url, fav.url]));
+  const pairReasons = new Map();
+
+  const find = (url) => {
+    const current = parent.get(url);
+    if (current === url) return url;
+    const root = find(current);
+    parent.set(url, root);
+    return root;
+  };
+  const unite = (a, b) => {
+    const rootA = find(a);
+    const rootB = find(b);
+    if (rootA !== rootB) parent.set(rootB, rootA);
+  };
+
+  for (let i = 0; i < candidates.length; i++) {
+    for (let j = i + 1; j < candidates.length; j++) {
+      const similarity = getFavoriteSimilarity(candidates[i], candidates[j]);
+      if (similarity.score >= 3) {
+        unite(candidates[i].url, candidates[j].url);
+        pairReasons.set(`${candidates[i].url}|${candidates[j].url}`, similarity.reasons);
+      }
+    }
+  }
+
+  const grouped = new Map();
+  candidates.forEach((fav) => {
+    const root = find(fav.url);
+    if (!grouped.has(root)) grouped.set(root, []);
+    grouped.get(root).push(fav);
+  });
+
+  return Array.from(grouped.values())
+    .filter(group => group.length >= 2)
+    .map((group) => {
+      const reasons = new Set();
+      for (let i = 0; i < group.length; i++) {
+        for (let j = i + 1; j < group.length; j++) {
+          (pairReasons.get(`${group[i].url}|${group[j].url}`) || pairReasons.get(`${group[j].url}|${group[i].url}`) || [])
+            .forEach(reason => reasons.add(reason));
+        }
+      }
+      const titleBase = group[0].name ? compactSideText(group[0].name, 18) : '近い条件';
+      return {
+        title: `${titleBase} ほか${group.length}件`,
+        reasons: Array.from(reasons).slice(0, 4),
+        favorites: group.sort((a, b) => Number(a.currentPrice || a.price || 0) - Number(b.currentPrice || b.price || 0))
+      };
+    })
+    .slice(0, 4);
+}
+
+function getSideLanguageModelApi() {
+  if (typeof LanguageModel !== 'undefined') return LanguageModel;
+  if (globalThis.ai?.languageModel) return globalThis.ai.languageModel;
+  if (globalThis.ai?.createTextSession) {
+    return {
+      availability: async () => 'available',
+      create: () => globalThis.ai.createTextSession()
+    };
+  }
+  return null;
+}
+
+function buildSideSimilarPrompt(groups) {
+  const lines = groups.map((group, index) => {
+    const items = group.favorites.map((fav) => [
+      fav.name || '(物件名不明)',
+      formatSidePrice(fav.currentPrice || fav.price),
+      fav.area ? `${fav.area}m²` : '',
+      fav.tsubotanka ? `坪${fav.tsubotanka}万円` : '',
+      fav.station || '',
+      fav.repairFundRisk?.label ? `修繕${fav.repairFundRisk.label}` : ''
+    ].filter(Boolean).join(' / '));
+    return `グループ${index + 1}: ${group.reasons.join('・')}\n${items.map(item => `- ${item}`).join('\n')}`;
+  }).join('\n\n');
+
+  return [
+    'あなたは中古マンション候補の比較メモを作るアシスタントです。',
+    '以下の類似候補グループについて、何が近く、どこを比べるべきかを短くまとめてください。',
+    '購入すべき/買わないべき等の結論、価格査定、根拠のない推測は書かないでください。',
+    '各グループ1文、45〜80文字程度。返答はJSONだけにしてください。',
+    '形式: {"summaries":[{"comment":"..."}]}',
+    '',
+    lines
+  ].join('\n');
+}
+
+function normalizeSideSimilarSummary(rawSummary, groups) {
+  const summaries = Array.isArray(rawSummary?.summaries) ? rawSummary.summaries : [];
+  return {
+    summaries: groups.map((group, index) => ({
+      comment: compactSideText(
+        summaries[index]?.comment ||
+        `${group.reasons.join('・')}が近い候補です。価格、面積、管理費、修繕積立金を横並びで確認してください。`,
+        110
+      )
+    }))
+  };
+}
+
+function parseSideSimilarSummary(responseText, groups) {
+  if (typeof responseText === 'object' && responseText !== null) {
+    return normalizeSideSimilarSummary(responseText, groups);
+  }
+
+  const cleaned = String(responseText || '').trim().replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+  if (jsonMatch) {
+    try {
+      return normalizeSideSimilarSummary(JSON.parse(jsonMatch[0]), groups);
+    } catch (error) {
+      console.error('[坪たん Side Panel] 類似AI短評のJSON解析に失敗:', error);
+    }
+  }
+
+  const lines = cleaned.split(/\n/).filter(Boolean);
+  return {
+    summaries: groups.map((group, index) => ({
+      comment: compactSideText(lines[index] || `${group.reasons.join('・')}が近い候補です。比較表で差分を確認してください。`, 110)
+    }))
+  };
+}
+
+async function generateSideSimilarAiSummary() {
+  const groups = buildSimilarFavoriteGroups(getSortedSideFavorites());
+  if (groups.length === 0 || sideSimilarAiInProgress) return;
+
+  const api = getSideLanguageModelApi();
+  if (!api?.create) {
+    setSideStatus('このChromeではAI短評を生成できません');
+    return;
+  }
+
+  sideSimilarAiInProgress = true;
+  renderSimilarGroups(getSortedSideFavorites());
+
+  let session = null;
+  try {
+    if (api.availability) {
+      const availability = await api.availability();
+      if (availability === 'unavailable') throw new Error('この端末ではGemini Nanoを利用できません');
+    }
+
+    session = await api.create();
+    const prompt = buildSideSimilarPrompt(groups);
+    let response;
+    try {
+      response = await session.prompt(prompt, {
+        responseConstraint: {
+          type: 'object',
+          properties: {
+            summaries: {
+              type: 'array',
+              items: {
+                type: 'object',
+                properties: {
+                  comment: { type: 'string' }
+                },
+                required: ['comment'],
+                additionalProperties: false
+              }
+            }
+          },
+          required: ['summaries'],
+          additionalProperties: false
+        },
+        omitResponseConstraintInput: true
+      });
+    } catch (error) {
+      console.error('[坪たん Side Panel] 構造化AI短評に失敗。通常プロンプトで再試行:', error);
+      response = await session.prompt(`${prompt}\n\nJSON以外の文章は書かず、必ず {"summaries":[{"comment":"..."}]} の形で返してください。`);
+    }
+
+    sideSimilarAiSummary = parseSideSimilarSummary(response, groups);
+    setSideStatus('類似候補のAI短評を生成しました');
+  } catch (error) {
+    console.error('[坪たん Side Panel] 類似AI短評生成エラー:', error);
+    setSideStatus(error.message || 'AI短評を生成できませんでした');
+  } finally {
+    if (session?.destroy) session.destroy();
+    sideSimilarAiInProgress = false;
+    renderSimilarGroups(getSortedSideFavorites());
+  }
+}
+
 function findBestValue(favorites, rowDef) {
   if (!rowDef.best) return null;
   const values = favorites
@@ -327,6 +673,8 @@ function renderChecklistView(favorites) {
     card.appendChild(meta);
 
     card.appendChild(createSideChecklistGrid(fav));
+    const aiChecklistBlock = createSideAiChecklistBlock(fav);
+    if (aiChecklistBlock) card.appendChild(aiChecklistBlock);
     listEl.appendChild(card);
   });
 }
@@ -435,6 +783,8 @@ function renderSelectedDetail(fav) {
   checklistTitle.textContent = '内見チェックリスト';
   checklistSection.appendChild(checklistTitle);
   checklistSection.appendChild(createSideChecklistGrid(fav));
+  const aiChecklistBlock = createSideAiChecklistBlock(fav);
+  if (aiChecklistBlock) checklistSection.appendChild(aiChecklistBlock);
   grid.appendChild(checklistSection);
 
   detailEl.appendChild(grid);
@@ -474,6 +824,61 @@ function createSideChecklistGrid(fav) {
   return grid;
 }
 
+function getSideAiViewingChecklistItems(fav) {
+  return Array.isArray(fav.aiViewingChecklist)
+    ? fav.aiViewingChecklist.filter(item => item?.id && item?.label)
+    : [];
+}
+
+function createSideAiChecklistBlock(fav) {
+  const items = getSideAiViewingChecklistItems(fav);
+  if (items.length === 0) return null;
+
+  const state = getSideChecklistState(fav);
+  const block = document.createElement('div');
+  block.className = 'side-ai-checklist-block';
+
+  const title = document.createElement('div');
+  title.className = 'side-ai-checklist-title';
+  title.textContent = 'AIチェック';
+  block.appendChild(title);
+
+  const list = document.createElement('div');
+  list.className = 'side-ai-checklist-list';
+  items.forEach((item) => {
+    const label = document.createElement('label');
+    label.className = 'side-ai-checklist-item';
+
+    const input = document.createElement('input');
+    input.type = 'checkbox';
+    input.checked = Boolean(state[item.id]);
+    input.addEventListener('change', () => {
+      updateSideFavorite(fav.url, {
+        viewingChecklist: {
+          ...getSideChecklistState(fav),
+          [item.id]: input.checked
+        }
+      });
+    });
+    label.appendChild(input);
+
+    const body = document.createElement('span');
+    const itemLabel = document.createElement('strong');
+    itemLabel.textContent = item.label;
+    body.appendChild(itemLabel);
+    if (item.reason) {
+      const reason = document.createElement('em');
+      reason.textContent = item.reason;
+      body.appendChild(reason);
+    }
+    label.appendChild(body);
+    list.appendChild(label);
+  });
+
+  block.appendChild(list);
+  return block;
+}
+
 function getSideChecklistState(fav) {
   return fav.viewingChecklist && typeof fav.viewingChecklist === 'object'
     ? fav.viewingChecklist
@@ -483,7 +888,9 @@ function getSideChecklistState(fav) {
 function getSideChecklistProgress(fav) {
   const state = getSideChecklistState(fav);
   const completed = SIDE_CHECKLIST_ITEMS.filter(item => state[item.id]).length;
-  return { completed, total: SIDE_CHECKLIST_ITEMS.length };
+  const aiItems = getSideAiViewingChecklistItems(fav);
+  const aiCompleted = aiItems.filter(item => state[item.id]).length;
+  return { completed: completed + aiCompleted, total: SIDE_CHECKLIST_ITEMS.length + aiItems.length };
 }
 
 function updateSideFavorite(url, patch) {
@@ -699,6 +1106,11 @@ function formatSideDateTime(value) {
   });
 }
 
+function compactSideText(text, maxLength = 80) {
+  const compact = String(text || '').replace(/\s+/g, ' ').trim();
+  return compact.length > maxLength ? `${compact.slice(0, maxLength)}...` : compact;
+}
+
 function setSideStatus(text) {
   const statusEl = document.getElementById('side-status');
   if (!statusEl) return;
@@ -805,8 +1217,12 @@ function setupSidePanelEvents() {
     tab.addEventListener('click', () => switchSideView(tab.dataset.view));
   });
 
-  document.getElementById('side-search-input')?.addEventListener('input', renderSidePanel);
+  document.getElementById('side-search-input')?.addEventListener('input', () => {
+    sideSimilarAiSummary = null;
+    renderSidePanel();
+  });
   document.getElementById('side-recheck')?.addEventListener('click', requestSideRecheck);
+  document.getElementById('side-similar-ai')?.addEventListener('click', generateSideSimilarAiSummary);
   document.getElementById('export-side-csv')?.addEventListener('click', exportSideCsv);
   document.getElementById('open-selected-detail')?.addEventListener('click', openSelectedDetail);
   document.getElementById('open-checklist-view')?.addEventListener('click', () => switchSideView('checklist'));
@@ -815,6 +1231,7 @@ function setupSidePanelEvents() {
     if (areaName !== 'local') return;
     if (changes.favorites) sideFavorites = changes.favorites.newValue || [];
     if (changes.loanSettings) sideLoanSettings = normalizeSideLoanSettings(changes.loanSettings.newValue);
+    if (changes.favorites || changes.loanSettings) sideSimilarAiSummary = null;
     renderSidePanel();
   });
 }

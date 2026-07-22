@@ -562,6 +562,134 @@
   font-weight: 500;
 }
 
+.ai-tool-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.ai-tool-section {
+  padding: 8px;
+  border: 1px solid rgba(103, 232, 249, 0.72);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.ai-tool-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.ai-tool-title {
+  color: #0f766e;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.ai-tool-description {
+  margin-top: 1px;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.ai-tool-generate-btn,
+.ai-tool-secondary-btn {
+  flex-shrink: 0;
+  padding: 4px 8px;
+  border: 1px solid #67e8f9;
+  border-radius: 999px;
+  background: #ffffff;
+  color: #0e7490;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1.2;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.ai-tool-generate-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.ai-tool-status {
+  margin-top: 4px;
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 600;
+}
+
+.ai-tool-status[data-tone="success"] {
+  color: #047857;
+}
+
+.ai-tool-status[data-tone="warn"] {
+  color: #b45309;
+}
+
+.ai-tool-status[data-tone="error"] {
+  color: #dc2626;
+}
+
+.ai-tool-result {
+  margin-top: 7px;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.ai-tool-subject {
+  margin-bottom: 5px;
+  color: #0f172a;
+  font-weight: 800;
+}
+
+.ai-tool-textarea {
+  width: 100%;
+  min-height: 96px;
+  padding: 7px 8px;
+  border: 1px solid #bae6fd;
+  border-radius: 5px;
+  background: #ffffff;
+  color: #334155;
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.55;
+  resize: vertical;
+}
+
+.ai-tool-secondary-btn {
+  margin-top: 6px;
+}
+
+.ai-tool-checklist {
+  margin: 0;
+  padding-left: 18px;
+}
+
+.ai-tool-checklist li + li {
+  margin-top: 4px;
+}
+
+.ai-tool-checklist strong,
+.ai-tool-checklist span {
+  display: block;
+}
+
+.ai-tool-checklist strong {
+  color: #0f172a;
+  font-size: 11px;
+}
+
+.ai-tool-checklist span {
+  color: #64748b;
+  font-size: 10px;
+  line-height: 1.45;
+}
+
 /* =============================================
    Favorite Button
    ============================================= */

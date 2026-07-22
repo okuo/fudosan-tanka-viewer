@@ -30,6 +30,8 @@ const DEFAULT_HIGHLIGHT_SETTINGS = {
 };
 
 const AI_PROPERTY_MEMOS_STORAGE_KEY = 'aiPropertyMemos';
+const AI_PROPERTY_INQUIRIES_STORAGE_KEY = 'aiPropertyInquiries';
+const AI_VIEWING_CHECKLISTS_STORAGE_KEY = 'aiViewingChecklists';
 const AI_PROPERTY_MEMOS_LIMIT = 50;
 const AI_PROPERTY_MEMO_MAX_FACTS = 26;
 const AI_PROPERTY_MEMO_MAX_SNIPPETS = 6;
@@ -847,6 +849,17 @@ function compactAiMemoText(text, maxLength = 120) {
   return compact.length > maxLength ? `${compact.slice(0, maxLength)}...` : compact;
 }
 
+function compactAiMemoMultilineText(text, maxLength = 1200) {
+  const compact = String(text || '')
+    .replace(/\r/g, '')
+    .split('\n')
+    .map(line => line.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .join('\n');
+  if (!compact) return '';
+  return compact.length > maxLength ? `${compact.slice(0, maxLength)}...` : compact;
+}
+
 function getTextWithoutFudosanUi(element) {
   if (!element?.cloneNode) return element?.textContent || '';
   const clone = element.cloneNode(true);
@@ -1011,6 +1024,15 @@ function createAiMemoSourceHash(context) {
   return String(hash >>> 0);
 }
 
+function createStableAiId(prefix, text) {
+  let hash = 0;
+  const source = String(text || '');
+  for (let i = 0; i < source.length; i++) {
+    hash = ((hash << 5) - hash + source.charCodeAt(i)) | 0;
+  }
+  return `${prefix}_${String(hash >>> 0)}`;
+}
+
 function buildAiPropertyMemoPrompt(context) {
   const factLines = buildAiMemoFactLines(context).join('\n');
   return [
@@ -1019,6 +1041,35 @@ function buildAiPropertyMemoPrompt(context) {
     '不足情報や追加確認が必要な点は「questions」に入れてください。',
     '日本語で、各項目は28文字から55文字程度、最大3件ずつにしてください。',
     '返答は次のJSONだけにしてください: {"positives":["..."],"cautions":["..."],"questions":["..."]}',
+    '',
+    '物件情報:',
+    factLines || '- 取得できた物件情報が少ない'
+  ].join('\n');
+}
+
+function buildAiInquiryPrompt(context) {
+  const factLines = buildAiMemoFactLines(context).join('\n');
+  return [
+    'あなたは中古マンション購入検討者が仲介会社へ送る問い合わせ文を作るアシスタントです。',
+    '以下の事実だけを根拠にしてください。推測や断定、購入推奨、価格査定は書かないでください。',
+    '本文は丁寧で短く、内見前に確認したい質問を5点前後にまとめてください。',
+    '質問には、該当情報がある場合だけ修繕履歴、管理状況、月額費用、価格改定、住宅ローン控除、ペット/駐車場/リフォーム等を含めてください。',
+    '個人情報、署名、電話番号、メールアドレスは入れないでください。',
+    '返答は次のJSONだけにしてください: {"subject":"...","body":"..."}',
+    '',
+    '物件情報:',
+    factLines || '- 取得できた物件情報が少ない'
+  ].join('\n');
+}
+
+function buildAiViewingChecklistPrompt(context) {
+  const factLines = buildAiMemoFactLines(context).join('\n');
+  return [
+    'あなたは中古マンションの内見前チェックリストを作るアシスタントです。',
+    '以下の事実だけを根拠にしてください。一般論だけでなく、この物件で確認したい点を優先してください。',
+    '各項目は現地でチェックできる行動にしてください。ラベルは8〜18文字、理由は20〜55文字程度。',
+    '最大8件。重複や抽象的な項目は避けてください。',
+    '返答は次のJSONだけにしてください: {"items":[{"label":"...","reason":"..."}]}',
     '',
     '物件情報:',
     factLines || '- 取得できた物件情報が少ない'
@@ -1043,6 +1094,40 @@ function getAiMemoResponseSchema() {
       }
     },
     required: ['positives', 'cautions', 'questions'],
+    additionalProperties: false
+  };
+}
+
+function getAiInquiryResponseSchema() {
+  return {
+    type: 'object',
+    properties: {
+      subject: { type: 'string' },
+      body: { type: 'string' }
+    },
+    required: ['subject', 'body'],
+    additionalProperties: false
+  };
+}
+
+function getAiViewingChecklistResponseSchema() {
+  return {
+    type: 'object',
+    properties: {
+      items: {
+        type: 'array',
+        items: {
+          type: 'object',
+          properties: {
+            label: { type: 'string' },
+            reason: { type: 'string' }
+          },
+          required: ['label', 'reason'],
+          additionalProperties: false
+        }
+      }
+    },
+    required: ['items'],
     additionalProperties: false
   };
 }
@@ -1074,6 +1159,42 @@ function normalizeAiMemo(rawMemo) {
   };
 }
 
+function normalizeAiInquiry(rawInquiry) {
+  const subject = compactAiMemoText(rawInquiry?.subject || '物件についての問い合わせ', 70);
+  const body = compactAiMemoMultilineText(rawInquiry?.body || '', 1200);
+  return {
+    subject,
+    body: body || 'この物件について、管理状況や修繕履歴、月額費用の詳細を確認したいです。'
+  };
+}
+
+function normalizeAiViewingChecklist(rawChecklist) {
+  const rawItems = Array.isArray(rawChecklist?.items) ? rawChecklist.items : [];
+  const seen = new Set();
+  const items = [];
+
+  rawItems.forEach((item) => {
+    const label = compactAiMemoText(String(item?.label || '').replace(/^[\s\-*・0-9０-９.)）]+/, ''), 32);
+    const reason = compactAiMemoText(String(item?.reason || '').replace(/^[\s\-*・0-9０-９.)）]+/, ''), 80);
+    if (!label || seen.has(label)) return;
+    seen.add(label);
+    items.push({
+      id: createStableAiId('ai_viewing', label),
+      label,
+      reason: reason || '現地で状態を確認してください'
+    });
+  });
+
+  return {
+    items: items.slice(0, 8).length > 0
+      ? items.slice(0, 8)
+      : [
+        { id: 'ai_viewing_management', label: '管理状態', reason: '共用部や掲示板から日常管理の状態を確認してください' },
+        { id: 'ai_viewing_repair', label: '修繕履歴', reason: '大規模修繕の履歴と今後の予定を確認してください' }
+      ]
+  };
+}
+
 function parseAiMemoResponse(responseText) {
   if (typeof responseText === 'object' && responseText !== null) {
     return normalizeAiMemo(responseText);
@@ -1098,6 +1219,51 @@ function parseAiMemoResponse(responseText) {
     positives: [cleaned || 'AIメモを生成できませんでした'],
     cautions: [],
     questions: []
+  });
+}
+
+function parseAiInquiryResponse(responseText) {
+  if (typeof responseText === 'object' && responseText !== null) {
+    return normalizeAiInquiry(responseText);
+  }
+
+  const rawText = String(responseText || '').trim();
+  const cleaned = rawText.replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+
+  if (jsonMatch) {
+    try {
+      return normalizeAiInquiry(JSON.parse(jsonMatch[0]));
+    } catch (error) {
+      logError('AI問い合わせ文のJSON解析に失敗:', error);
+    }
+  }
+
+  return normalizeAiInquiry({
+    subject: '物件についての問い合わせ',
+    body: cleaned
+  });
+}
+
+function parseAiViewingChecklistResponse(responseText) {
+  if (typeof responseText === 'object' && responseText !== null) {
+    return normalizeAiViewingChecklist(responseText);
+  }
+
+  const rawText = String(responseText || '').trim();
+  const cleaned = rawText.replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
+  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+
+  if (jsonMatch) {
+    try {
+      return normalizeAiViewingChecklist(JSON.parse(jsonMatch[0]));
+    } catch (error) {
+      logError('AI内見チェックのJSON解析に失敗:', error);
+    }
+  }
+
+  return normalizeAiViewingChecklist({
+    items: cleaned.split(/\n|。/).map(line => ({ label: line, reason: '現地で確認してください' }))
   });
 }
 
@@ -1127,6 +1293,49 @@ async function saveAiPropertyMemo(url, memo, sourceHash) {
 
   await setStorageData({ [AI_PROPERTY_MEMOS_STORAGE_KEY]: nextRecords });
   return nextRecords[0];
+}
+
+async function getAiPropertyToolRecords(storageKey) {
+  const result = await getStorageData({ [storageKey]: [] });
+  return Array.isArray(result[storageKey]) ? result[storageKey] : [];
+}
+
+async function loadAiPropertyToolRecord(storageKey, url) {
+  const records = await getAiPropertyToolRecords(storageKey);
+  return records.find(record => record.url === url) || null;
+}
+
+async function saveAiPropertyToolRecord(storageKey, url, payload, sourceHash) {
+  const records = await getAiPropertyToolRecords(storageKey);
+  const nextRecords = [
+    {
+      url,
+      payload,
+      sourceHash,
+      generatedAt: new Date().toISOString()
+    },
+    ...records.filter(record => record.url !== url)
+  ].slice(0, AI_PROPERTY_MEMOS_LIMIT);
+
+  await setStorageData({ [storageKey]: nextRecords });
+  return nextRecords[0];
+}
+
+async function updateFavoriteAiViewingChecklist(url, items) {
+  if (!url || !favoriteUrls.has(url)) return;
+
+  const result = await getStorageData({ favorites: [] });
+  const favorites = (Array.isArray(result.favorites) ? result.favorites : []).map((favorite) => {
+    if (favorite.url !== url) return favorite;
+    return {
+      ...favorite,
+      aiViewingChecklist: items,
+      aiViewingChecklistUpdatedAt: new Date().toISOString()
+    };
+  });
+
+  await setStorageData({ favorites });
+  favoriteDataByUrl = new Map(favorites.map(f => [f.url, f]));
 }
 
 function setAiMemoStatus(container, message, tone = '') {
@@ -1191,23 +1400,136 @@ function renderAiMemoResult(container, memo, generatedAt) {
   setAiMemoButtonState(container, { hasMemo: true });
 }
 
-async function promptAiPropertyMemo(session, prompt) {
+function setAiToolStatus(section, message, tone = '') {
+  const status = section.querySelector('.ai-tool-status');
+  if (!status) return;
+  status.textContent = message;
+  status.dataset.tone = tone;
+}
+
+function setAiToolButtonState(section, { loading = false, hasResult = false, disabled = false } = {}) {
+  const button = section.querySelector('.ai-tool-generate-btn');
+  if (!button) return;
+  const apiUnavailable = section.closest('.fudosan-ai-memo')?.dataset.aiMemoUnavailable === 'true';
+  button.disabled = loading || disabled || apiUnavailable;
+  button.textContent = loading ? '生成中...' : hasResult ? '再生成' : '生成';
+}
+
+function renderAiInquiryResult(section, inquiry, generatedAt) {
+  const result = section.querySelector('.ai-tool-result');
+  if (!result) return;
+  result.textContent = '';
+
+  const subject = document.createElement('div');
+  subject.className = 'ai-tool-subject';
+  subject.textContent = inquiry.subject;
+  result.appendChild(subject);
+
+  const body = document.createElement('textarea');
+  body.className = 'ai-tool-textarea';
+  body.value = inquiry.body;
+  body.readOnly = true;
+  result.appendChild(body);
+
+  const copyButton = document.createElement('button');
+  copyButton.className = 'ai-tool-secondary-btn';
+  copyButton.type = 'button';
+  copyButton.textContent = 'コピー';
+  copyButton.addEventListener('click', async () => {
+    try {
+      await navigator.clipboard.writeText(`件名: ${inquiry.subject}\n\n${inquiry.body}`);
+      setAiToolStatus(section, 'コピーしました', 'success');
+    } catch (error) {
+      logError('問い合わせ文コピー失敗:', error);
+      setAiToolStatus(section, 'コピーできませんでした', 'error');
+    }
+  });
+  result.appendChild(copyButton);
+
+  const generatedLabel = generatedAt ? `生成済み ${formatAiGeneratedAt(generatedAt)}` : '生成済み';
+  setAiToolStatus(section, generatedLabel, 'success');
+  setAiToolButtonState(section, { hasResult: true });
+}
+
+function renderAiViewingChecklistResult(section, checklist, generatedAt, isFavorite) {
+  const result = section.querySelector('.ai-tool-result');
+  if (!result) return;
+  result.textContent = '';
+
+  const list = document.createElement('ul');
+  list.className = 'ai-tool-checklist';
+  checklist.items.forEach((item) => {
+    const li = document.createElement('li');
+    const label = document.createElement('strong');
+    label.textContent = item.label;
+    li.appendChild(label);
+    const reason = document.createElement('span');
+    reason.textContent = item.reason;
+    li.appendChild(reason);
+    list.appendChild(li);
+  });
+  result.appendChild(list);
+
+  const saved = isFavorite ? 'お気に入りの内見リストにも保存しました' : 'お気に入り登録後もこのページで再生成できます';
+  const generatedLabel = generatedAt ? `生成済み ${formatAiGeneratedAt(generatedAt)} / ${saved}` : saved;
+  setAiToolStatus(section, generatedLabel, 'success');
+  setAiToolButtonState(section, { hasResult: true });
+}
+
+function formatAiGeneratedAt(value) {
+  return new Date(value).toLocaleString('ja-JP', {
+    month: 'numeric',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+function createAiPropertyToolSection({ title, description, storageKey, generate, render, normalizeSaved }) {
+  const section = document.createElement('section');
+  section.className = 'ai-tool-section';
+  section.innerHTML = `
+    <div class="ai-tool-header">
+      <div>
+        <div class="ai-tool-title">${title}</div>
+        <div class="ai-tool-description">${description}</div>
+      </div>
+      <button type="button" class="ai-tool-generate-btn">生成</button>
+    </div>
+    <div class="ai-tool-status"></div>
+    <div class="ai-tool-result"></div>
+  `;
+
+  section._aiTool = { title, storageKey, generate, render, normalizeSaved };
+  return section;
+}
+
+async function promptAiWithSchema(session, prompt, responseSchema, retryInstruction) {
   if (!session?.prompt) {
     throw new Error('Prompt APIのセッションを作成できませんでした');
   }
 
   try {
     return await session.prompt(prompt, {
-      responseConstraint: getAiMemoResponseSchema(),
+      responseConstraint: responseSchema,
       omitResponseConstraintInput: true
     });
   } catch (error) {
-    logError('AI物件メモの構造化出力に失敗。通常プロンプトで再試行します:', error);
-    return session.prompt(`${prompt}\n\nJSON以外の文章は書かず、必ずJSONだけで返してください。`);
+    logError('AI構造化出力に失敗。通常プロンプトで再試行します:', error);
+    return session.prompt(`${prompt}\n\n${retryInstruction || 'JSON以外の文章は書かず、必ずJSONだけで返してください。'}`);
   }
 }
 
-async function generateAiPropertyMemo(context, onProgress) {
+async function promptAiPropertyMemo(session, prompt) {
+  return promptAiWithSchema(
+    session,
+    prompt,
+    getAiMemoResponseSchema(),
+    'JSON以外の文章は書かず、必ず {"positives":[],"cautions":[],"questions":[]} の形で返してください。'
+  );
+}
+
+async function generateAiStructuredPropertyTool(context, onProgress, prompt, responseSchema, parser, retryInstruction) {
   const languageModel = getLanguageModelApi();
   if (!languageModel?.create) {
     throw new Error('このChromeではGemini NanoのPrompt APIが利用できません');
@@ -1244,14 +1566,47 @@ async function generateAiPropertyMemo(context, onProgress) {
       session = await languageModel.create();
     }
 
-    onProgress('AIメモを生成しています...');
-    const response = await promptAiPropertyMemo(session, buildAiPropertyMemoPrompt(context));
-    return parseAiMemoResponse(response);
+    onProgress('AIで生成しています...');
+    const response = await promptAiWithSchema(session, prompt, responseSchema, retryInstruction);
+    return parser(response);
   } finally {
     if (session?.destroy) {
       session.destroy();
     }
   }
+}
+
+async function generateAiPropertyMemo(context, onProgress) {
+  return generateAiStructuredPropertyTool(
+    context,
+    onProgress,
+    buildAiPropertyMemoPrompt(context),
+    getAiMemoResponseSchema(),
+    parseAiMemoResponse,
+    'JSON以外の文章は書かず、必ず {"positives":[],"cautions":[],"questions":[]} の形で返してください。'
+  );
+}
+
+async function generateAiInquiry(context, onProgress) {
+  return generateAiStructuredPropertyTool(
+    context,
+    onProgress,
+    buildAiInquiryPrompt(context),
+    getAiInquiryResponseSchema(),
+    parseAiInquiryResponse,
+    'JSON以外の文章は書かず、必ず {"subject":"...","body":"..."} の形で返してください。'
+  );
+}
+
+async function generateAiViewingChecklist(context, onProgress) {
+  return generateAiStructuredPropertyTool(
+    context,
+    onProgress,
+    buildAiViewingChecklistPrompt(context),
+    getAiViewingChecklistResponseSchema(),
+    parseAiViewingChecklistResponse,
+    'JSON以外の文章は書かず、必ず {"items":[{"label":"...","reason":"..."}]} の形で返してください。'
+  );
 }
 
 function createAiPropertyMemoElement(context, sourceHash) {
@@ -1279,6 +1634,30 @@ function createAiPropertyMemoElement(context, sourceHash) {
   body.textContent = '良い点・注意点・確認したいことを、ページ上の情報から短く整理します。';
   container.appendChild(body);
 
+  const tools = document.createElement('div');
+  tools.className = 'ai-tool-list';
+  const inquirySection = createAiPropertyToolSection({
+    title: '問い合わせ文',
+    description: '仲介会社に確認したい質問を文面化',
+    storageKey: AI_PROPERTY_INQUIRIES_STORAGE_KEY,
+    generate: generateAiInquiry,
+    render: renderAiInquiryResult,
+    normalizeSaved: normalizeAiInquiry
+  });
+  const checklistSection = createAiPropertyToolSection({
+    title: '内見チェック',
+    description: 'この物件で現地確認したい項目を作成',
+    storageKey: AI_VIEWING_CHECKLISTS_STORAGE_KEY,
+    generate: generateAiViewingChecklist,
+    render: (section, checklist, generatedAt) => {
+      renderAiViewingChecklistResult(section, checklist, generatedAt, favoriteUrls.has(context.url));
+    },
+    normalizeSaved: normalizeAiViewingChecklist
+  });
+  tools.appendChild(inquirySection);
+  tools.appendChild(checklistSection);
+  container.appendChild(tools);
+
   const note = document.createElement('div');
   note.className = 'ai-memo-note';
   note.textContent = 'AI生成のため、重要事項は必ず物件概要と仲介会社で確認してください。';
@@ -1302,6 +1681,30 @@ function createAiPropertyMemoElement(context, sourceHash) {
         disabled: false
       });
     }
+  });
+
+  tools.querySelectorAll('.ai-tool-section').forEach((section) => {
+    const tool = section._aiTool;
+    const generateButton = section.querySelector('.ai-tool-generate-btn');
+    generateButton?.addEventListener('click', async () => {
+      setAiToolButtonState(section, { loading: true });
+      setAiToolStatus(section, '対応状況を確認しています...');
+
+      try {
+        const payload = await tool.generate(context, message => setAiToolStatus(section, message));
+        const savedRecord = await saveAiPropertyToolRecord(tool.storageKey, context.url, payload, sourceHash);
+        if (tool.storageKey === AI_VIEWING_CHECKLISTS_STORAGE_KEY) {
+          await updateFavoriteAiViewingChecklist(context.url, payload.items);
+        }
+        tool.render(section, payload, savedRecord.generatedAt);
+      } catch (error) {
+        logError(`${tool.title || 'AIツール'}生成エラー:`, error);
+        const result = section.querySelector('.ai-tool-result');
+        if (result) result.textContent = error.message || '生成できませんでした';
+        setAiToolStatus(section, '生成できませんでした', 'error');
+        setAiToolButtonState(section, { hasResult: Boolean(section.querySelector('.ai-tool-result')?.textContent) });
+      }
+    });
   });
 
   return container;
@@ -1351,10 +1754,26 @@ function displayAiPropertyMemo(context) {
     }
   });
 
+  container.querySelectorAll('.ai-tool-section').forEach((section) => {
+    const tool = section._aiTool;
+    loadAiPropertyToolRecord(tool.storageKey, context.url).then((record) => {
+      if (!document.body.contains(container)) return;
+      if (record?.payload && record.sourceHash === sourceHash) {
+        tool.render(section, tool.normalizeSaved(record.payload), record.generatedAt);
+      } else if (record?.payload) {
+        setAiToolStatus(section, '物件情報が変わった可能性があります。再生成できます', 'warn');
+      }
+    });
+  });
+
   if (!getLanguageModelApi()?.create) {
     container.dataset.aiMemoUnavailable = 'true';
     setAiMemoStatus(container, 'このChromeではGemini NanoのPrompt APIが未対応です', 'warn');
     setAiMemoButtonState(container, { disabled: true });
+    container.querySelectorAll('.ai-tool-section').forEach((section) => {
+      setAiToolStatus(section, 'Prompt API未対応です', 'warn');
+      setAiToolButtonState(section, { disabled: true });
+    });
   }
 }
 

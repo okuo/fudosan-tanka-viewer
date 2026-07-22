@@ -128,13 +128,29 @@ function getCurrentVersion() {
   return chrome.runtime.getManifest().version || '';
 }
 
+function isLocalBuildManifest(manifest) {
+  return /\blocal\b/i.test(manifest.version_name || '') ||
+    /\bLOCAL\b/.test(manifest.name || '') ||
+    /\bLOCAL\b/.test(manifest.action?.default_title || '');
+}
+
 function renderExtensionVersion() {
   const versionEl = document.getElementById('extension-version');
   if (!versionEl || typeof chrome === 'undefined' || !chrome.runtime?.getManifest) return;
 
   const manifest = chrome.runtime.getManifest();
-  versionEl.textContent = `v${manifest.version}`;
-  versionEl.title = `${manifest.name} v${manifest.version} の更新内容`;
+  const isLocal = isLocalBuildManifest(manifest);
+  const versionName = manifest.version_name || manifest.version;
+  const brandTitle = document.querySelector('.popup-brand h1');
+
+  versionEl.textContent = isLocal ? `LOCAL v${manifest.version}` : `v${manifest.version}`;
+  versionEl.title = `${manifest.name} ${versionName} の更新内容`;
+  versionEl.classList.toggle('extension-version--local', isLocal);
+  document.body.classList.toggle('is-local-build', isLocal);
+
+  if (brandTitle) {
+    brandTitle.textContent = isLocal ? '坪たん LOCAL' : '坪たん';
+  }
 }
 
 function renderReleaseNotes() {
@@ -586,7 +602,59 @@ function getViewingChecklistState(fav) {
 function getViewingChecklistProgress(fav) {
   const state = getViewingChecklistState(fav);
   const completed = VIEWING_CHECKLIST_ITEMS.filter(item => state[item.id]).length;
-  return { completed, total: VIEWING_CHECKLIST_ITEMS.length };
+  const aiItems = getAiViewingChecklistItems(fav);
+  const aiCompleted = aiItems.filter(item => state[item.id]).length;
+  return { completed: completed + aiCompleted, total: VIEWING_CHECKLIST_ITEMS.length + aiItems.length };
+}
+
+function getAiViewingChecklistItems(fav) {
+  return Array.isArray(fav.aiViewingChecklist)
+    ? fav.aiViewingChecklist.filter(item => item?.id && item?.label)
+    : [];
+}
+
+function createAiViewingChecklistBlock(fav) {
+  const items = getAiViewingChecklistItems(fav);
+  if (items.length === 0) return null;
+
+  const state = getViewingChecklistState(fav);
+  const block = document.createElement('div');
+  block.className = 'checklist-ai-block';
+
+  const title = document.createElement('div');
+  title.className = 'checklist-ai-title';
+  title.textContent = 'AIチェック';
+  block.appendChild(title);
+
+  const list = document.createElement('div');
+  list.className = 'checklist-ai-list';
+  items.forEach((item) => {
+    const label = document.createElement('label');
+    label.className = 'checklist-ai-item';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = Boolean(state[item.id]);
+    checkbox.addEventListener('change', () => {
+      updateFavoriteChecklistItem(fav.url, item.id, checkbox.checked);
+    });
+    label.appendChild(checkbox);
+
+    const body = document.createElement('span');
+    const itemLabel = document.createElement('strong');
+    itemLabel.textContent = item.label;
+    body.appendChild(itemLabel);
+    if (item.reason) {
+      const reason = document.createElement('em');
+      reason.textContent = item.reason;
+      body.appendChild(reason);
+    }
+    label.appendChild(body);
+    list.appendChild(label);
+  });
+
+  block.appendChild(list);
+  return block;
 }
 
 function renderViewingChecklist(favorites) {
@@ -662,6 +730,9 @@ function renderViewingChecklist(favorites) {
       grid.appendChild(label);
     });
     section.appendChild(grid);
+
+    const aiChecklistBlock = createAiViewingChecklistBlock(fav);
+    if (aiChecklistBlock) section.appendChild(aiChecklistBlock);
 
     const note = document.createElement('textarea');
     note.className = 'checklist-note';

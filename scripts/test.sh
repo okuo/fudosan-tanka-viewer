@@ -14,9 +14,11 @@ fi
 "$NODE_BIN" --check popup.js
 "$NODE_BIN" --check sidepanel.js
 "$NODE_BIN" --check background.js
+"$NODE_BIN" --check scripts/make-local-manifest.js
 "$NODE_BIN" --check tests/e2e_extension.js
 "$NODE_BIN" test_csv_export.js
 "$NODE_BIN" test_background.js
+bash -n scripts/build-local.sh
 git diff --check
 
 echo "npm-free test checks passed"
