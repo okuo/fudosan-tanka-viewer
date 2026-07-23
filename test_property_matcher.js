@@ -117,3 +117,53 @@ const sameRoomNoCorroboration = {
 };
 const roomOnlyLeft = { ...left, roomNumber: '1801' };
 assert.equal(matcher.scoreUnitMatch(roomOnlyLeft, sameRoomNoCorroboration).confidence, 'candidate');
+
+const roomOnlyUnit = matcher.scoreUnitMatch(
+  { roomNumber: '1801' },
+  { roomNumber: '1801' }
+);
+assert.equal(roomOnlyUnit.score, 55);
+assert.equal(roomOnlyUnit.confidence, 'candidate');
+
+const roomAndFloorUnit = matcher.scoreUnitMatch(
+  { roomNumber: '1801', floor: 18 },
+  { roomNumber: '1801', floor: 18 }
+);
+assert.equal(roomAndFloorUnit.score >= 80, true);
+assert.equal(roomAndFloorUnit.confidence, 'high');
+
+const roomAndNearbyAreaUnit = matcher.scoreUnitMatch(
+  { roomNumber: '1801', areaSqm: 72 },
+  { roomNumber: '1801', areaSqm: 72.75 }
+);
+assert.equal(roomAndNearbyAreaUnit.score >= 80, true);
+assert.equal(roomAndNearbyAreaUnit.confidence, 'high');
+
+const belowHighThresholdUnit = matcher.scoreUnitMatch(
+  { floor: 18, layout: '3LDK' },
+  { floor: 18, layout: '3LDK' }
+);
+assert.equal(belowHighThresholdUnit.score < 80, true);
+assert.notEqual(belowHighThresholdUnit.confidence, 'high');
+
+const aliases = [{
+  addressBlockKey: left.addressBlockKey,
+  normalizedNames: [left.normalizedBuildingName, '新宿パークハウス']
+}];
+const aliasAtSameBlock = matcher.prepareListingRecord({
+  site: 'ATHOME',
+  url: 'https://www.athome.co.jp/mansion/555/',
+  rawName: '新宿パークハウス',
+  rawAddress: '東京都新宿区西新宿1丁目2番3号'
+}, '2026-07-19T00:04:00.000Z');
+assert.equal(matcher.scoreBuildingMatch(left, aliasAtSameBlock, aliases).confidence, 'high');
+assert.equal(matcher.scoreBuildingMatch(left, aliasAtSameBlock, aliases).reasons.includes('確認済み名称別名'), true);
+
+const aliasAtDifferentBlock = matcher.prepareListingRecord({
+  site: 'ATHOME',
+  url: 'https://www.athome.co.jp/mansion/556/',
+  rawName: '新宿パークハウス',
+  rawAddress: '東京都新宿区西新宿1丁目2番4号'
+}, '2026-07-19T00:05:00.000Z');
+assert.notEqual(matcher.scoreBuildingMatch(left, aliasAtDifferentBlock, aliases).confidence, 'high');
+assert.equal(matcher.scoreBuildingMatch(left, aliasAtDifferentBlock, aliases).reasons.includes('確認済み名称別名'), false);

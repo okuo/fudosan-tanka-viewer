@@ -238,18 +238,16 @@
     const reasons = [];
     const areaDiff = left.areaSqm && right.areaSqm ? Math.abs(left.areaSqm - right.areaSqm) : null;
     let score = 0;
-    if (left.roomNumber && left.roomNumber === right.roomNumber) { score += 40; reasons.push('部屋番号が一致'); }
+    if (left.roomNumber && left.roomNumber === right.roomNumber) { score += 55; reasons.push('部屋番号が一致'); }
     if (areaDiff !== null && areaDiff <= 0.5) { score += 45; reasons.push('専有面積が一致'); }
     else if (areaDiff !== null && areaDiff <= 1.0) { score += 25; reasons.push('専有面積が近い'); }
     if (left.floor && left.floor === right.floor) { score += 30; reasons.push('階数が一致'); }
     if (left.layout && left.layout === right.layout) { score += 15; reasons.push('間取りが一致'); }
     if (left.direction && left.direction === right.direction) score += 5;
     if (left.balconyAreaSqm && right.balconyAreaSqm && Math.abs(left.balconyAreaSqm - right.balconyAreaSqm) <= 0.5) score += 5;
-    const roomMatches = left.roomNumber && left.roomNumber === right.roomNumber;
-    const roomCorroborated = roomMatches && (areaDiff !== null && areaDiff <= 1.0 || left.floor && left.floor === right.floor);
-    const confidence = roomCorroborated || score >= UNIT_HIGH_SCORE
+    const confidence = score >= UNIT_HIGH_SCORE
       ? 'high'
-      : roomMatches || score >= UNIT_CANDIDATE_SCORE
+      : score >= UNIT_CANDIDATE_SCORE
         ? 'candidate'
         : 'none';
     return { score, confidence, reasons };
