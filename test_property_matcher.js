@@ -167,3 +167,96 @@ const aliasAtDifferentBlock = matcher.prepareListingRecord({
 }, '2026-07-19T00:05:00.000Z');
 assert.notEqual(matcher.scoreBuildingMatch(left, aliasAtDifferentBlock, aliases).confidence, 'high');
 assert.equal(matcher.scoreBuildingMatch(left, aliasAtDifferentBlock, aliases).reasons.includes('確認済み名称別名'), false);
+
+const sameUnitA = left;
+const sameUnitB = right;
+const otherUnit = matcher.prepareListingRecord({
+  site: 'ATHOME',
+  url: 'https://www.athome.co.jp/mansion/555/',
+  sourceListingId: '555',
+  rawName: 'ザパークハウス新宿',
+  rawAddress: '東京都新宿区西新宿1-2-3',
+  priceMan: 11800,
+  areaSqm: 65.2,
+  floor: '10階',
+  layout: '2LDK'
+}, '2026-07-19T00:04:00.000Z');
+const candidateBuilding = matcher.prepareListingRecord({
+  site: 'REHOUSE',
+  url: 'https://www.rehouse.co.jp/buy/mansion/bkdetail/666/',
+  sourceListingId: '666',
+  rawName: 'ザパークハウス新宿',
+  rawAddress: '東京都新宿区西新宿1丁目',
+  areaSqm: 72.9,
+  floor: '18階',
+  layout: '3LDK'
+}, '2026-07-19T00:05:00.000Z');
+
+sameUnitA.priceMan = 12000;
+sameUnitA.managementFeeYen = 22000;
+sameUnitB.priceMan = 12300;
+sameUnitB.managementFeeYen = 23000;
+
+const emptyOverrides = { version: 1, buildingPairs: [], unitPairs: [] };
+const emptyAliases = { version: 1, entries: [] };
+const index = matcher.buildListingIndex(
+  [sameUnitA, sameUnitB, otherUnit, candidateBuilding],
+  emptyOverrides,
+  emptyAliases
+);
+
+assert.equal(index.groups.length, 2);
+const matchedGroup = index.groups.find(group => group.memberKeys.includes(sameUnitA.listingKey));
+assert.equal(matchedGroup.unitGroups.length, 2);
+assert.equal(matchedGroup.unitGroups[0].listings.length, 2);
+assert.equal(index.candidates.length, 1);
+
+const summaries = matcher.summarizeListingMatches(index);
+assert.deepEqual(summaries[sameUnitA.listingKey], {
+  listingKey: sameUnitA.listingKey,
+  sameUnitSiteCount: 2,
+  candidateCount: 1,
+  buildingUnitCount: 2,
+  buildingSiteCount: 3,
+  matchedSites: ['HOMES', 'SUUMO']
+});
+assert.equal(summaries[sameUnitB.listingKey].candidateCount, 1);
+
+assert.deepEqual(matcher.diffUnitListings([sameUnitA, sameUnitB]), {
+  minPriceMan: 12000,
+  fieldsWithDifferences: ['managementFeeYen', 'priceMan'],
+  priceDiffByKey: {
+    [sameUnitA.listingKey]: 0,
+    [sameUnitB.listingKey]: 300
+  }
+});
+
+const forcedDifferent = {
+  version: 1,
+  buildingPairs: [{
+    leftKey: matcher.pairKey(sameUnitA.listingKey, sameUnitB.listingKey).split('|')[0],
+    rightKey: matcher.pairKey(sameUnitA.listingKey, sameUnitB.listingKey).split('|')[1],
+    decision: 'different'
+  }],
+  unitPairs: []
+};
+const separated = matcher.buildListingIndex([sameUnitA, sameUnitB], forcedDifferent, emptyAliases);
+assert.equal(separated.groups.length, 2);
+
+const sameUnitC = { ...sameUnitA, site: 'REHOUSE', listingKey: 'REHOUSE:777', url: 'https://www.rehouse.co.jp/777' };
+const transitiveDifferent = {
+  version: 1,
+  buildingPairs: [{
+    leftKey: matcher.pairKey(sameUnitB.listingKey, sameUnitC.listingKey).split('|')[0],
+    rightKey: matcher.pairKey(sameUnitB.listingKey, sameUnitC.listingKey).split('|')[1],
+    decision: 'different'
+  }],
+  unitPairs: []
+};
+const transitivelySeparated = matcher.buildListingIndex(
+  [sameUnitA, sameUnitB, sameUnitC], transitiveDifferent, emptyAliases
+);
+assert.equal(transitivelySeparated.groups.length, 2);
+assert.equal(transitivelySeparated.groups.some(group => (
+  group.memberKeys.includes(sameUnitB.listingKey) && group.memberKeys.includes(sameUnitC.listingKey)
+)), false);

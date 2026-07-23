@@ -253,10 +253,241 @@
     return { score, confidence, reasons };
   }
 
+  function pairKey(leftKey, rightKey) {
+    return [leftKey, rightKey].sort().join('|');
+  }
+
+  function decisionMap(pairs) {
+    return new Map((Array.isArray(pairs) ? pairs : [])
+      .filter(item => item?.leftKey && item?.rightKey && ['same', 'different'].includes(item.decision))
+      .map(item => [pairKey(item.leftKey, item.rightKey), item.decision]));
+  }
+
+  function createUnionFind(keys, blockedPairs = new Set()) {
+    const parent = new Map(keys.map(key => [key, key]));
+    const members = new Map(keys.map(key => [key, new Set([key])]));
+    const find = (key) => {
+      const current = parent.get(key);
+      if (current === key) return key;
+      const root = find(current);
+      parent.set(key, root);
+      return root;
+    };
+    const hasConflict = (leftKey, rightKey) => {
+      const leftRoot = find(leftKey);
+      const rightRoot = find(rightKey);
+      if (leftRoot === rightRoot) return false;
+      const leftMembers = members.get(leftRoot) || new Set();
+      const rightMembers = members.get(rightRoot) || new Set();
+      return Array.from(leftMembers).some(leftMember => (
+        Array.from(rightMembers).some(rightMember => blockedPairs.has(pairKey(leftMember, rightMember)))
+      ));
+    };
+    const unite = (leftKey, rightKey) => {
+      const leftRoot = find(leftKey);
+      const rightRoot = find(rightKey);
+      if (leftRoot === rightRoot) return true;
+      if (hasConflict(leftRoot, rightRoot)) return false;
+      const leftMembers = members.get(leftRoot) || new Set();
+      const rightMembers = members.get(rightRoot) || new Set();
+      parent.set(rightRoot, leftRoot);
+      rightMembers.forEach(key => leftMembers.add(key));
+      members.set(leftRoot, leftMembers);
+      members.delete(rightRoot);
+      return true;
+    };
+    return { find, unite, hasConflict };
+  }
+
+  function stableId(prefix, keys) {
+    let hash = 2166136261;
+    [...keys].sort().join('|').split('').forEach((char) => {
+      hash ^= char.charCodeAt(0);
+      hash = Math.imul(hash, 16777619);
+    });
+    return `${prefix}-${(hash >>> 0).toString(36)}`;
+  }
+
+  function diffUnitListings(listings) {
+    const comparableFields = ['priceMan', 'areaSqm', 'layout', 'floor', 'managementFeeYen', 'repairFundYen'];
+    const prices = listings.map(item => Number(item.priceMan)).filter(Number.isFinite);
+    const minPriceMan = prices.length ? Math.min(...prices) : null;
+    const fieldsWithDifferences = comparableFields.filter((field) => {
+      const values = listings.map(item => item[field]).filter(value => value !== null && value !== undefined && value !== '');
+      if (field === 'areaSqm') {
+        const numericValues = values.map(Number).filter(Number.isFinite);
+        return numericValues.length > 1 && Math.max(...numericValues) - Math.min(...numericValues) > 0.1;
+      }
+      return new Set(values).size > 1;
+    });
+    return {
+      minPriceMan,
+      fieldsWithDifferences: fieldsWithDifferences.sort(),
+      priceDiffByKey: Object.fromEntries(listings.map(item => [
+        item.listingKey,
+        minPriceMan === null || !Number.isFinite(Number(item.priceMan)) ? null : Number(item.priceMan) - minPriceMan
+      ]))
+    };
+  }
+
+  function buildListingIndex(records, overrides = {}, aliasState = {}) {
+    const items = (Array.isArray(records) ? records : []).filter(record => record && record.listingKey);
+    const byKey = new Map(items.map(record => [record.listingKey, record]));
+    const buildingDecisions = decisionMap(overrides?.buildingPairs);
+    const unitDecisions = decisionMap(overrides?.unitPairs);
+    const aliases = Array.isArray(aliasState?.entries) ? aliasState.entries : [];
+    const blockedBuildings = new Set(Array.from(buildingDecisions)
+      .filter(([, decision]) => decision === 'different')
+      .map(([key]) => key));
+    const buildingUf = createUnionFind(items.map(item => item.listingKey), blockedBuildings);
+    const rawBuildingCandidates = [];
+    const unitCandidates = [];
+
+    for (let leftIndex = 0; leftIndex < items.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < items.length; rightIndex += 1) {
+        const leftItem = items[leftIndex];
+        const rightItem = items[rightIndex];
+        const key = pairKey(leftItem.listingKey, rightItem.listingKey);
+        const forced = buildingDecisions.get(key);
+        if (leftItem.site === rightItem.site && !forced) continue;
+        const result = scoreBuildingMatch(leftItem, rightItem, aliases);
+        if (forced === 'same' || (!forced && result.confidence === 'high')) {
+          buildingUf.unite(leftItem.listingKey, rightItem.listingKey);
+        } else if (forced !== 'different' && result.confidence === 'candidate') {
+          rawBuildingCandidates.push({
+            scope: 'building',
+            leftKey: leftItem.listingKey,
+            rightKey: rightItem.listingKey,
+            ...result
+          });
+        }
+      }
+    }
+
+    const buildingBuckets = new Map();
+    items.forEach((item) => {
+      const root = buildingUf.find(item.listingKey);
+      if (!buildingBuckets.has(root)) buildingBuckets.set(root, []);
+      buildingBuckets.get(root).push(item);
+    });
+
+    const buildingCandidateMap = new Map();
+    rawBuildingCandidates.forEach((candidate) => {
+      const leftRoot = buildingUf.find(candidate.leftKey);
+      const rightRoot = buildingUf.find(candidate.rightKey);
+      if (leftRoot === rightRoot || buildingUf.hasConflict(leftRoot, rightRoot)) return;
+      const key = pairKey(leftRoot, rightRoot);
+      const current = buildingCandidateMap.get(key);
+      if (!current || candidate.score > current.score) {
+        buildingCandidateMap.set(key, {
+          ...candidate,
+          leftKey: leftRoot,
+          rightKey: rightRoot,
+          leftMemberKeys: (buildingBuckets.get(leftRoot) || []).map(item => item.listingKey),
+          rightMemberKeys: (buildingBuckets.get(rightRoot) || []).map(item => item.listingKey)
+        });
+      }
+    });
+
+    const groups = Array.from(buildingBuckets.values()).map((buildingItems) => {
+      const blockedUnits = new Set(Array.from(unitDecisions)
+        .filter(([, decision]) => decision === 'different')
+        .map(([key]) => key));
+      const unitUf = createUnionFind(buildingItems.map(item => item.listingKey), blockedUnits);
+      const rawUnitCandidates = [];
+      for (let leftIndex = 0; leftIndex < buildingItems.length; leftIndex += 1) {
+        for (let rightIndex = leftIndex + 1; rightIndex < buildingItems.length; rightIndex += 1) {
+          const leftItem = buildingItems[leftIndex];
+          const rightItem = buildingItems[rightIndex];
+          const key = pairKey(leftItem.listingKey, rightItem.listingKey);
+          const forced = unitDecisions.get(key);
+          if (leftItem.site === rightItem.site && !forced) continue;
+          const result = scoreUnitMatch(leftItem, rightItem);
+          if (forced === 'same' || (!forced && result.confidence === 'high')) {
+            unitUf.unite(leftItem.listingKey, rightItem.listingKey);
+          } else if (forced !== 'different' && result.confidence === 'candidate') {
+            rawUnitCandidates.push({
+              scope: 'unit',
+              leftKey: leftItem.listingKey,
+              rightKey: rightItem.listingKey,
+              ...result
+            });
+          }
+        }
+      }
+      const units = new Map();
+      buildingItems.forEach((item) => {
+        const root = unitUf.find(item.listingKey);
+        if (!units.has(root)) units.set(root, []);
+        units.get(root).push(item);
+      });
+      const unitCandidateMap = new Map();
+      rawUnitCandidates.forEach((candidate) => {
+        const leftRoot = unitUf.find(candidate.leftKey);
+        const rightRoot = unitUf.find(candidate.rightKey);
+        if (leftRoot === rightRoot || unitUf.hasConflict(leftRoot, rightRoot)) return;
+        const key = pairKey(leftRoot, rightRoot);
+        const current = unitCandidateMap.get(key);
+        if (!current || candidate.score > current.score) {
+          unitCandidateMap.set(key, {
+            ...candidate,
+            leftKey: leftRoot,
+            rightKey: rightRoot,
+            leftMemberKeys: (units.get(leftRoot) || []).map(item => item.listingKey),
+            rightMemberKeys: (units.get(rightRoot) || []).map(item => item.listingKey)
+          });
+        }
+      });
+      unitCandidates.push(...unitCandidateMap.values());
+      return {
+        groupId: stableId('building', buildingItems.map(item => item.listingKey)),
+        displayName: buildingItems.find(item => item.rawName)?.rawName || '物件名不明',
+        memberKeys: buildingItems.map(item => item.listingKey),
+        unitGroups: Array.from(units.values()).map(unitItems => ({
+          unitId: stableId('unit', unitItems.map(item => item.listingKey)),
+          listingKeys: unitItems.map(item => item.listingKey),
+          listings: [...unitItems].sort(
+            (leftItem, rightItem) => Number(leftItem.priceMan || Infinity) - Number(rightItem.priceMan || Infinity)
+          ),
+          diff: diffUnitListings(unitItems)
+        }))
+      };
+    });
+
+    return { groups, candidates: [...buildingCandidateMap.values(), ...unitCandidates], byKey };
+  }
+
+  function summarizeListingMatches(index) {
+    const summaries = {};
+    index.groups.forEach((group) => {
+      const buildingSiteCount = new Set(
+        group.unitGroups.flatMap(unit => unit.listings.map(item => item.site))
+      ).size;
+      group.unitGroups.forEach((unitGroup) => {
+        const matchedSites = Array.from(new Set(unitGroup.listings.map(item => item.site))).sort();
+        unitGroup.listings.forEach((item) => {
+          summaries[item.listingKey] = {
+            listingKey: item.listingKey,
+            sameUnitSiteCount: matchedSites.length,
+            candidateCount: index.candidates.filter(candidate => (
+              candidate.leftMemberKeys?.includes(item.listingKey) ||
+              candidate.rightMemberKeys?.includes(item.listingKey)
+            )).length,
+            buildingUnitCount: group.unitGroups.length,
+            buildingSiteCount,
+            matchedSites
+          };
+        });
+      });
+    });
+    return summaries;
+  }
+
   const api = {
     normalizeBuildingName, extractBuildingWing, normalizeAddress, normalizeLayout,
     parseFloor, parseArea, normalizeBuiltAt, diceCoefficient, normalizeUrl,
-    extractSourceListingId, prepareListingRecord, scoreBuildingMatch, scoreUnitMatch
+    extractSourceListingId, prepareListingRecord, scoreBuildingMatch, scoreUnitMatch,
+    pairKey, buildListingIndex, summarizeListingMatches, diffUnitListings
   };
   globalScope.FudosanPropertyMatcher = api;
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
