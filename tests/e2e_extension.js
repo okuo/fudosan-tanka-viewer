@@ -877,6 +877,23 @@ async function setPopupStorage(page, extensionVersion) {
         years: 35,
         downPaymentMan: 0
       },
+      observedListingsV1: {
+        version: 1,
+        items: [{ listingKey: 'SUUMO:popup-clear-test' }]
+      },
+      listingMatchOverridesV1: {
+        version: 1,
+        buildingPairs: [{ pairKey: 'building-clear-test' }],
+        unitPairs: [{ pairKey: 'unit-clear-test' }]
+      },
+      buildingAliasesV1: {
+        version: 1,
+        entries: [{ alias: 'clear-test' }]
+      },
+      crossSiteMatchingSettingsV1: {
+        enabled: true,
+        retentionDays: 90
+      },
       lastSeenReleaseNotesVersion: extensionVersion
     }, resolve);
   }), { favorites, extensionVersion });
@@ -909,6 +926,38 @@ async function testPopup(context, extensionId) {
   await setPopupStorage(page, CURRENT_VERSION);
   await page.reload();
   await page.waitForSelector('.favorite-item', { timeout: 10000 });
+
+  const toggle = page.locator('#cross-site-enabled');
+  assert.equal(await toggle.isChecked(), true);
+  await toggle.uncheck();
+  await page.waitForFunction(() => new Promise((resolve) => {
+    chrome.storage.local.get({ crossSiteMatchingSettingsV1: {} }, result => (
+      resolve(
+        result.crossSiteMatchingSettingsV1.enabled === false &&
+        result.crossSiteMatchingSettingsV1.retentionDays === 90
+      )
+    ));
+  }));
+
+  page.once('dialog', dialog => dialog.accept());
+  await page.locator('#clear-cross-site-data').click();
+  await page.waitForFunction(() => new Promise((resolve) => {
+    chrome.storage.local.get({
+      observedListingsV1: { items: [{}] },
+      listingMatchOverridesV1: { buildingPairs: [{}], unitPairs: [{}] },
+      buildingAliasesV1: { entries: [{}] },
+      crossSiteMatchingSettingsV1: { enabled: true },
+      favorites: []
+    }, result => resolve(
+      result.observedListingsV1.items.length === 0 &&
+      result.listingMatchOverridesV1.buildingPairs.length === 0 &&
+      result.listingMatchOverridesV1.unitPairs.length === 0 &&
+      result.buildingAliasesV1.entries.length === 0 &&
+      result.crossSiteMatchingSettingsV1.enabled === false &&
+      result.crossSiteMatchingSettingsV1.retentionDays === 90 &&
+      result.favorites.length === 2
+    ));
+  }));
 
   assert.equal(await page.locator('.favorite-item').count(), 2);
   assert.equal(await page.locator('.favorite-price-history').count(), 1);

@@ -36,6 +36,16 @@ const VIEWING_CHECKLIST_ITEMS = [
 
 const RELEASE_NOTES = [
   {
+    version: '1.12.0',
+    title: 'サイト横断・同一物件チェッカーを追加',
+    items: [
+      '対応4サイトで閲覧した同じマンション・住戸を、Side Panelでまとめて比較できるようにしました。',
+      '同一住戸の価格差、管理費・修繕積立金の記載差、掲載サイトを確認できます。',
+      '閲覧物件情報はブラウザ内だけに保存され、未閲覧サイトへの自動アクセスや外部送信は行いません。',
+      '横断照合の停止と閲覧物件データの削除は、ポップアップからいつでも行えます。'
+    ]
+  },
+  {
     version: '1.11.0',
     title: 'AI物件メモを追加',
     items: [
@@ -1052,6 +1062,49 @@ function setupLoanSettings() {
   loadLoanSettings();
 }
 
+function showCrossSiteSettingsStatus(text, tone = '') {
+  const status = document.getElementById('cross-site-settings-status');
+  if (!status) return;
+  status.textContent = text;
+  status.dataset.tone = tone;
+}
+
+function loadCrossSiteSettings() {
+  chrome.storage.local.get({
+    crossSiteMatchingSettingsV1: { enabled: true, retentionDays: 90 }
+  }, (result) => {
+    const toggle = document.getElementById('cross-site-enabled');
+    if (toggle) toggle.checked = result.crossSiteMatchingSettingsV1.enabled !== false;
+  });
+}
+
+async function saveCrossSiteSettings() {
+  const enabled = document.getElementById('cross-site-enabled')?.checked !== false;
+  const response = await chrome.runtime.sendMessage({
+    type: 'CROSS_SITE_SAVE_SETTINGS',
+    settings: { enabled, retentionDays: 90 }
+  });
+  if (!response?.ok) throw new Error(response?.error || '設定を保存できませんでした');
+  showCrossSiteSettingsStatus(enabled ? '横断照合を有効にしました' : '横断照合を停止しました');
+}
+
+async function clearCrossSiteData() {
+  if (!window.confirm('閲覧物件、手動判定、確認済みの名称別名を削除しますか？お気に入りは削除されません。')) return;
+  const response = await chrome.runtime.sendMessage({ type: 'CROSS_SITE_CLEAR' });
+  if (!response?.ok) throw new Error(response?.error || '閲覧物件データを削除できませんでした');
+  showCrossSiteSettingsStatus('閲覧物件データを削除しました');
+}
+
+function setupCrossSiteSettings() {
+  document.getElementById('cross-site-enabled')?.addEventListener('change', () => {
+    saveCrossSiteSettings().catch(error => showCrossSiteSettingsStatus(error.message, 'error'));
+  });
+  document.getElementById('clear-cross-site-data')?.addEventListener('click', () => {
+    clearCrossSiteData().catch(error => showCrossSiteSettingsStatus(error.message, 'error'));
+  });
+  loadCrossSiteSettings();
+}
+
 function formatRecheckSummary(response) {
   if (!response || response.error) {
     return response?.error || '再チェックに失敗しました';
@@ -1258,6 +1311,10 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   if (changes.loanSettings) {
     renderLoanSettings(normalizeLoanSettings(changes.loanSettings.newValue));
   }
+
+  if (changes.crossSiteMatchingSettingsV1) {
+    loadCrossSiteSettings();
+  }
 });
 
 renderExtensionVersion();
@@ -1266,4 +1323,5 @@ setupViewTabs();
 setupFavoriteRecheck();
 setupPopupActions();
 setupLoanSettings();
+setupCrossSiteSettings();
 loadFavorites();

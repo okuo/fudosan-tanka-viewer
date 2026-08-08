@@ -1341,3 +1341,18 @@ body.is-local-build .popup-header h1 {
   font-size: 10px;
   text-align: right;
 }
+
+.cross-site-settings { padding: 10px 16px 12px; border-bottom: 1px solid #e2e8f0; background: #fff; }
+.cross-site-settings-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.cross-site-settings-header h2 { margin: 0 0 3px; color: #334155; font-size: 12px; font-weight: 700; }
+.cross-site-settings-header p,
+.cross-site-retention { margin: 0; color: #64748b; font-size: 10px; line-height: 1.45; }
+.cross-site-retention { margin-top: 6px; }
+.cross-site-toggle { display: flex; align-items: center; gap: 5px; flex-shrink: 0; color: #334155; font-size: 10px; font-weight: 700; }
+.cross-site-toggle input { width: 16px; height: 16px; accent-color: #2563eb; }
+.cross-site-settings-actions { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 8px; }
+#clear-cross-site-data { min-height: 30px; border: 1px solid #b91c1c; border-radius: 5px; padding: 5px 8px; background: #fff; color: #b91c1c; font: inherit; font-size: 10px; font-weight: 700; cursor: pointer; }
+#clear-cross-site-data:hover { background: #fef2f2; }
+#clear-cross-site-data:focus-visible { outline: 2px solid rgba(185, 28, 28, 0.3); outline-offset: 2px; }
+#cross-site-settings-status { color: #047857; font-size: 10px; font-weight: 600; text-align: right; }
+#cross-site-settings-status[data-tone="error"] { color: #b91c1c; }
