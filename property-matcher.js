@@ -257,15 +257,31 @@
     return [leftKey, rightKey].sort().join('|');
   }
 
+  function compareText(leftValue, rightValue) {
+    const left = String(leftValue);
+    const right = String(rightValue);
+    if (left < right) return -1;
+    if (left > right) return 1;
+    return 0;
+  }
+
   function decisionMap(pairs) {
-    return new Map((Array.isArray(pairs) ? pairs : [])
+    const decisions = new Map();
+    (Array.isArray(pairs) ? pairs : [])
       .filter(item => item?.leftKey && item?.rightKey && ['same', 'different'].includes(item.decision))
-      .map(item => [pairKey(item.leftKey, item.rightKey), item.decision]));
+      .forEach((item) => {
+        const key = pairKey(item.leftKey, item.rightKey);
+        if (!decisions.has(key) || item.decision === 'different') {
+          decisions.set(key, item.decision);
+        }
+      });
+    return new Map([...decisions].sort(([leftKey], [rightKey]) => compareText(leftKey, rightKey)));
   }
 
   function createUnionFind(keys, blockedPairs = new Set()) {
-    const parent = new Map(keys.map(key => [key, key]));
-    const members = new Map(keys.map(key => [key, new Set([key])]));
+    const sortedKeys = [...new Set(keys)].sort(compareText);
+    const parent = new Map(sortedKeys.map(key => [key, key]));
+    const members = new Map(sortedKeys.map(key => [key, new Set([key])]));
     const find = (key) => {
       const current = parent.get(key);
       if (current === key) return key;
@@ -288,12 +304,13 @@
       const rightRoot = find(rightKey);
       if (leftRoot === rightRoot) return true;
       if (hasConflict(leftRoot, rightRoot)) return false;
-      const leftMembers = members.get(leftRoot) || new Set();
-      const rightMembers = members.get(rightRoot) || new Set();
-      parent.set(rightRoot, leftRoot);
-      rightMembers.forEach(key => leftMembers.add(key));
-      members.set(leftRoot, leftMembers);
-      members.delete(rightRoot);
+      const [retainedRoot, mergedRoot] = [leftRoot, rightRoot].sort(compareText);
+      const retainedMembers = members.get(retainedRoot) || new Set();
+      const mergedMembers = members.get(mergedRoot) || new Set();
+      parent.set(mergedRoot, retainedRoot);
+      mergedMembers.forEach(key => retainedMembers.add(key));
+      members.set(retainedRoot, retainedMembers);
+      members.delete(mergedRoot);
       return true;
     };
     return { find, unite, hasConflict };
@@ -308,12 +325,20 @@
     return `${prefix}-${(hash >>> 0).toString(36)}`;
   }
 
+  function finiteNumberOrNull(value) {
+    if (value === null || value === undefined || String(value).trim() === '') return null;
+    const number = Number(value);
+    return Number.isFinite(number) ? number : null;
+  }
+
   function diffUnitListings(listings) {
+    const items = (Array.isArray(listings) ? [...listings] : [])
+      .sort((leftItem, rightItem) => compareText(leftItem.listingKey, rightItem.listingKey));
     const comparableFields = ['priceMan', 'areaSqm', 'layout', 'floor', 'managementFeeYen', 'repairFundYen'];
-    const prices = listings.map(item => Number(item.priceMan)).filter(Number.isFinite);
+    const prices = items.map(item => finiteNumberOrNull(item.priceMan)).filter(value => value !== null);
     const minPriceMan = prices.length ? Math.min(...prices) : null;
     const fieldsWithDifferences = comparableFields.filter((field) => {
-      const values = listings.map(item => item[field]).filter(value => value !== null && value !== undefined && value !== '');
+      const values = items.map(item => item[field]).filter(value => value !== null && value !== undefined && value !== '');
       if (field === 'areaSqm') {
         const numericValues = values.map(Number).filter(Number.isFinite);
         return numericValues.length > 1 && Math.max(...numericValues) - Math.min(...numericValues) > 0.1;
@@ -323,15 +348,93 @@
     return {
       minPriceMan,
       fieldsWithDifferences: fieldsWithDifferences.sort(),
-      priceDiffByKey: Object.fromEntries(listings.map(item => [
-        item.listingKey,
-        minPriceMan === null || !Number.isFinite(Number(item.priceMan)) ? null : Number(item.priceMan) - minPriceMan
-      ]))
+      priceDiffByKey: Object.fromEntries(items.map((item) => {
+        const priceMan = finiteNumberOrNull(item.priceMan);
+        return [item.listingKey, minPriceMan === null || priceMan === null ? null : priceMan - minPriceMan];
+      }))
     };
   }
 
+  function collectMatchEdges(items, decisions, scoreMatch) {
+    const edges = [];
+    for (let leftIndex = 0; leftIndex < items.length; leftIndex += 1) {
+      for (let rightIndex = leftIndex + 1; rightIndex < items.length; rightIndex += 1) {
+        const leftItem = items[leftIndex];
+        const rightItem = items[rightIndex];
+        const key = pairKey(leftItem.listingKey, rightItem.listingKey);
+        const forced = decisions.get(key);
+        if (leftItem.site === rightItem.site && !forced) continue;
+        edges.push({ leftItem, rightItem, key, forced, result: scoreMatch(leftItem, rightItem) });
+      }
+    }
+    return edges.sort((leftEdge, rightEdge) => compareText(leftEdge.key, rightEdge.key));
+  }
+
+  function applyMatchUnions(unionFind, edges) {
+    edges.filter(edge => edge.forced === 'same').forEach((edge) => {
+      unionFind.unite(edge.leftItem.listingKey, edge.rightItem.listingKey);
+    });
+    edges
+      .filter(edge => !edge.forced && edge.result.confidence === 'high')
+      .sort((leftEdge, rightEdge) => (
+        rightEdge.result.score - leftEdge.result.score || compareText(leftEdge.key, rightEdge.key)
+      ))
+      .forEach((edge) => {
+        unionFind.unite(edge.leftItem.listingKey, edge.rightItem.listingKey);
+      });
+  }
+
+  function collectBuckets(items, unionFind) {
+    const buckets = new Map();
+    items.forEach((item) => {
+      const root = unionFind.find(item.listingKey);
+      if (!buckets.has(root)) buckets.set(root, []);
+      buckets.get(root).push(item);
+    });
+    return buckets;
+  }
+
+  function deduplicateCandidates(edges, unionFind, buckets, scope) {
+    const candidates = new Map();
+    edges
+      .filter(edge => !edge.forced && edge.result.confidence === 'candidate')
+      .forEach((edge) => {
+        const rawLeftRoot = unionFind.find(edge.leftItem.listingKey);
+        const rawRightRoot = unionFind.find(edge.rightItem.listingKey);
+        if (rawLeftRoot === rawRightRoot || unionFind.hasConflict(rawLeftRoot, rawRightRoot)) return;
+        const [leftRoot, rightRoot] = [rawLeftRoot, rawRightRoot].sort(compareText);
+        const key = pairKey(leftRoot, rightRoot);
+        const current = candidates.get(key);
+        if (!current || edge.result.score > current.score) {
+          candidates.set(key, {
+            scope,
+            leftKey: leftRoot,
+            rightKey: rightRoot,
+            ...edge.result,
+            leftMemberKeys: (buckets.get(leftRoot) || []).map(item => item.listingKey),
+            rightMemberKeys: (buckets.get(rightRoot) || []).map(item => item.listingKey)
+          });
+        }
+      });
+    return [...candidates.values()].sort((leftCandidate, rightCandidate) => (
+      compareText(leftCandidate.leftKey, rightCandidate.leftKey) ||
+      compareText(leftCandidate.rightKey, rightCandidate.rightKey)
+    ));
+  }
+
+  function compareListings(leftItem, rightItem) {
+    const leftPrice = finiteNumberOrNull(leftItem.priceMan);
+    const rightPrice = finiteNumberOrNull(rightItem.priceMan);
+    if (leftPrice !== null && rightPrice !== null && leftPrice !== rightPrice) return leftPrice - rightPrice;
+    if (leftPrice === null && rightPrice !== null) return 1;
+    if (leftPrice !== null && rightPrice === null) return -1;
+    return compareText(leftItem.listingKey, rightItem.listingKey);
+  }
+
   function buildListingIndex(records, overrides = {}, aliasState = {}) {
-    const items = (Array.isArray(records) ? records : []).filter(record => record && record.listingKey);
+    const items = (Array.isArray(records) ? records : [])
+      .filter(record => record && record.listingKey)
+      .sort((leftItem, rightItem) => compareText(leftItem.listingKey, rightItem.listingKey));
     const byKey = new Map(items.map(record => [record.listingKey, record]));
     const buildingDecisions = decisionMap(overrides?.buildingPairs);
     const unitDecisions = decisionMap(overrides?.unitPairs);
@@ -340,121 +443,56 @@
       .filter(([, decision]) => decision === 'different')
       .map(([key]) => key));
     const buildingUf = createUnionFind(items.map(item => item.listingKey), blockedBuildings);
-    const rawBuildingCandidates = [];
     const unitCandidates = [];
+    const buildingEdges = collectMatchEdges(
+      items,
+      buildingDecisions,
+      (leftItem, rightItem) => scoreBuildingMatch(leftItem, rightItem, aliases)
+    );
+    applyMatchUnions(buildingUf, buildingEdges);
+    const buildingBuckets = collectBuckets(items, buildingUf);
+    const buildingCandidates = deduplicateCandidates(
+      buildingEdges,
+      buildingUf,
+      buildingBuckets,
+      'building'
+    );
 
-    for (let leftIndex = 0; leftIndex < items.length; leftIndex += 1) {
-      for (let rightIndex = leftIndex + 1; rightIndex < items.length; rightIndex += 1) {
-        const leftItem = items[leftIndex];
-        const rightItem = items[rightIndex];
-        const key = pairKey(leftItem.listingKey, rightItem.listingKey);
-        const forced = buildingDecisions.get(key);
-        if (leftItem.site === rightItem.site && !forced) continue;
-        const result = scoreBuildingMatch(leftItem, rightItem, aliases);
-        if (forced === 'same' || (!forced && result.confidence === 'high')) {
-          buildingUf.unite(leftItem.listingKey, rightItem.listingKey);
-        } else if (forced !== 'different' && result.confidence === 'candidate') {
-          rawBuildingCandidates.push({
-            scope: 'building',
-            leftKey: leftItem.listingKey,
-            rightKey: rightItem.listingKey,
-            ...result
-          });
-        }
-      }
-    }
-
-    const buildingBuckets = new Map();
-    items.forEach((item) => {
-      const root = buildingUf.find(item.listingKey);
-      if (!buildingBuckets.has(root)) buildingBuckets.set(root, []);
-      buildingBuckets.get(root).push(item);
-    });
-
-    const buildingCandidateMap = new Map();
-    rawBuildingCandidates.forEach((candidate) => {
-      const leftRoot = buildingUf.find(candidate.leftKey);
-      const rightRoot = buildingUf.find(candidate.rightKey);
-      if (leftRoot === rightRoot || buildingUf.hasConflict(leftRoot, rightRoot)) return;
-      const key = pairKey(leftRoot, rightRoot);
-      const current = buildingCandidateMap.get(key);
-      if (!current || candidate.score > current.score) {
-        buildingCandidateMap.set(key, {
-          ...candidate,
-          leftKey: leftRoot,
-          rightKey: rightRoot,
-          leftMemberKeys: (buildingBuckets.get(leftRoot) || []).map(item => item.listingKey),
-          rightMemberKeys: (buildingBuckets.get(rightRoot) || []).map(item => item.listingKey)
-        });
-      }
-    });
-
-    const groups = Array.from(buildingBuckets.values()).map((buildingItems) => {
-      const blockedUnits = new Set(Array.from(unitDecisions)
-        .filter(([, decision]) => decision === 'different')
-        .map(([key]) => key));
-      const unitUf = createUnionFind(buildingItems.map(item => item.listingKey), blockedUnits);
-      const rawUnitCandidates = [];
-      for (let leftIndex = 0; leftIndex < buildingItems.length; leftIndex += 1) {
-        for (let rightIndex = leftIndex + 1; rightIndex < buildingItems.length; rightIndex += 1) {
-          const leftItem = buildingItems[leftIndex];
-          const rightItem = buildingItems[rightIndex];
-          const key = pairKey(leftItem.listingKey, rightItem.listingKey);
-          const forced = unitDecisions.get(key);
-          if (leftItem.site === rightItem.site && !forced) continue;
-          const result = scoreUnitMatch(leftItem, rightItem);
-          if (forced === 'same' || (!forced && result.confidence === 'high')) {
-            unitUf.unite(leftItem.listingKey, rightItem.listingKey);
-          } else if (forced !== 'different' && result.confidence === 'candidate') {
-            rawUnitCandidates.push({
-              scope: 'unit',
-              leftKey: leftItem.listingKey,
-              rightKey: rightItem.listingKey,
-              ...result
-            });
-          }
-        }
-      }
-      const units = new Map();
-      buildingItems.forEach((item) => {
-        const root = unitUf.find(item.listingKey);
-        if (!units.has(root)) units.set(root, []);
-        units.get(root).push(item);
+    const groups = Array.from(buildingBuckets.values())
+      .sort((leftItems, rightItems) => compareText(leftItems[0].listingKey, rightItems[0].listingKey))
+      .map((buildingItems) => {
+        const blockedUnits = new Set(Array.from(unitDecisions)
+          .filter(([, decision]) => decision === 'different')
+          .map(([key]) => key));
+        const unitUf = createUnionFind(buildingItems.map(item => item.listingKey), blockedUnits);
+        const unitEdges = collectMatchEdges(buildingItems, unitDecisions, scoreUnitMatch);
+        applyMatchUnions(unitUf, unitEdges);
+        const units = collectBuckets(buildingItems, unitUf);
+        unitCandidates.push(...deduplicateCandidates(unitEdges, unitUf, units, 'unit'));
+        return {
+          groupId: stableId('building', buildingItems.map(item => item.listingKey)),
+          displayName: buildingItems.find(item => item.rawName)?.rawName || '物件名不明',
+          memberKeys: buildingItems.map(item => item.listingKey),
+          unitGroups: Array.from(units.values())
+            .sort((leftItems, rightItems) => (
+              rightItems.length - leftItems.length ||
+              compareText(leftItems[0].listingKey, rightItems[0].listingKey)
+            ))
+            .map(unitItems => ({
+              unitId: stableId('unit', unitItems.map(item => item.listingKey)),
+              listingKeys: unitItems.map(item => item.listingKey),
+              listings: [...unitItems].sort(compareListings),
+              diff: diffUnitListings(unitItems)
+            }))
+        };
       });
-      const unitCandidateMap = new Map();
-      rawUnitCandidates.forEach((candidate) => {
-        const leftRoot = unitUf.find(candidate.leftKey);
-        const rightRoot = unitUf.find(candidate.rightKey);
-        if (leftRoot === rightRoot || unitUf.hasConflict(leftRoot, rightRoot)) return;
-        const key = pairKey(leftRoot, rightRoot);
-        const current = unitCandidateMap.get(key);
-        if (!current || candidate.score > current.score) {
-          unitCandidateMap.set(key, {
-            ...candidate,
-            leftKey: leftRoot,
-            rightKey: rightRoot,
-            leftMemberKeys: (units.get(leftRoot) || []).map(item => item.listingKey),
-            rightMemberKeys: (units.get(rightRoot) || []).map(item => item.listingKey)
-          });
-        }
-      });
-      unitCandidates.push(...unitCandidateMap.values());
-      return {
-        groupId: stableId('building', buildingItems.map(item => item.listingKey)),
-        displayName: buildingItems.find(item => item.rawName)?.rawName || '物件名不明',
-        memberKeys: buildingItems.map(item => item.listingKey),
-        unitGroups: Array.from(units.values()).map(unitItems => ({
-          unitId: stableId('unit', unitItems.map(item => item.listingKey)),
-          listingKeys: unitItems.map(item => item.listingKey),
-          listings: [...unitItems].sort(
-            (leftItem, rightItem) => Number(leftItem.priceMan || Infinity) - Number(rightItem.priceMan || Infinity)
-          ),
-          diff: diffUnitListings(unitItems)
-        }))
-      };
-    });
 
-    return { groups, candidates: [...buildingCandidateMap.values(), ...unitCandidates], byKey };
+    const candidates = [...buildingCandidates, ...unitCandidates].sort((leftCandidate, rightCandidate) => (
+      compareText(leftCandidate.scope, rightCandidate.scope) ||
+      compareText(leftCandidate.leftKey, rightCandidate.leftKey) ||
+      compareText(leftCandidate.rightKey, rightCandidate.rightKey)
+    ));
+    return { groups, candidates, byKey };
   }
 
   function summarizeListingMatches(index) {

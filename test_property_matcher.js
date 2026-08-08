@@ -260,3 +260,160 @@ assert.equal(transitivelySeparated.groups.length, 2);
 assert.equal(transitivelySeparated.groups.some(group => (
   group.memberKeys.includes(sameUnitB.listingKey) && group.memberKeys.includes(sameUnitC.listingKey)
 )), false);
+
+const sameBeatsAutomaticOverrides = {
+  version: 1,
+  buildingPairs: [
+    {
+      leftKey: matcher.pairKey(sameUnitA.listingKey, sameUnitC.listingKey).split('|')[0],
+      rightKey: matcher.pairKey(sameUnitA.listingKey, sameUnitC.listingKey).split('|')[1],
+      decision: 'same'
+    },
+    {
+      leftKey: matcher.pairKey(sameUnitB.listingKey, sameUnitC.listingKey).split('|')[0],
+      rightKey: matcher.pairKey(sameUnitB.listingKey, sameUnitC.listingKey).split('|')[1],
+      decision: 'different'
+    }
+  ],
+  unitPairs: []
+};
+const sameBeatsAutomatic = matcher.buildListingIndex(
+  [sameUnitA, sameUnitB, sameUnitC],
+  sameBeatsAutomaticOverrides,
+  emptyAliases
+);
+assert.equal(sameBeatsAutomatic.groups.length, 2);
+assert.equal(sameBeatsAutomatic.groups.some(group => (
+  group.memberKeys.includes(sameUnitA.listingKey) &&
+  group.memberKeys.includes(sameUnitC.listingKey) &&
+  !group.memberKeys.includes(sameUnitB.listingKey)
+)), true);
+
+function canonicalIndexShape(listingIndex) {
+  return {
+    groups: listingIndex.groups.map(group => ({
+      groupId: group.groupId,
+      displayName: group.displayName,
+      memberKeys: group.memberKeys,
+      unitGroups: group.unitGroups.map(unit => ({
+        unitId: unit.unitId,
+        listingKeys: unit.listingKeys,
+        listings: unit.listings.map(listing => listing.listingKey)
+      }))
+    })),
+    candidates: listingIndex.candidates.map(candidate => ({
+      scope: candidate.scope,
+      leftKey: candidate.leftKey,
+      rightKey: candidate.rightKey,
+      leftMemberKeys: candidate.leftMemberKeys,
+      rightMemberKeys: candidate.rightMemberKeys,
+      score: candidate.score,
+      confidence: candidate.confidence
+    }))
+  };
+}
+
+const canonicalInput = [sameUnitA, sameUnitB, otherUnit, candidateBuilding];
+assert.deepEqual(
+  canonicalIndexShape(matcher.buildListingIndex(canonicalInput, emptyOverrides, emptyAliases)),
+  canonicalIndexShape(matcher.buildListingIndex([...canonicalInput].reverse(), emptyOverrides, emptyAliases))
+);
+
+const unitSameDifferentOverrides = {
+  version: 1,
+  buildingPairs: [],
+  unitPairs: [
+    {
+      leftKey: matcher.pairKey(sameUnitA.listingKey, sameUnitC.listingKey).split('|')[0],
+      rightKey: matcher.pairKey(sameUnitA.listingKey, sameUnitC.listingKey).split('|')[1],
+      decision: 'same'
+    },
+    {
+      leftKey: matcher.pairKey(sameUnitB.listingKey, sameUnitC.listingKey).split('|')[0],
+      rightKey: matcher.pairKey(sameUnitB.listingKey, sameUnitC.listingKey).split('|')[1],
+      decision: 'different'
+    }
+  ]
+};
+const unitSameBeatsAutomatic = matcher.buildListingIndex(
+  [sameUnitA, sameUnitB, sameUnitC],
+  unitSameDifferentOverrides,
+  emptyAliases
+);
+assert.equal(unitSameBeatsAutomatic.groups.length, 1);
+assert.equal(unitSameBeatsAutomatic.groups[0].unitGroups.length, 2);
+assert.equal(unitSameBeatsAutomatic.groups[0].unitGroups.some(unit => (
+  unit.listingKeys.includes(sameUnitA.listingKey) &&
+  unit.listingKeys.includes(sameUnitC.listingKey) &&
+  !unit.listingKeys.includes(sameUnitB.listingKey)
+)), true);
+
+const contradictoryManualOverrides = {
+  version: 1,
+  buildingPairs: [
+    {
+      leftKey: matcher.pairKey(sameUnitA.listingKey, sameUnitB.listingKey).split('|')[0],
+      rightKey: matcher.pairKey(sameUnitA.listingKey, sameUnitB.listingKey).split('|')[1],
+      decision: 'same'
+    },
+    {
+      leftKey: matcher.pairKey(sameUnitA.listingKey, sameUnitC.listingKey).split('|')[0],
+      rightKey: matcher.pairKey(sameUnitA.listingKey, sameUnitC.listingKey).split('|')[1],
+      decision: 'same'
+    },
+    {
+      leftKey: matcher.pairKey(sameUnitB.listingKey, sameUnitC.listingKey).split('|')[0],
+      rightKey: matcher.pairKey(sameUnitB.listingKey, sameUnitC.listingKey).split('|')[1],
+      decision: 'different'
+    }
+  ],
+  unitPairs: []
+};
+const contradictoryManual = matcher.buildListingIndex(
+  [sameUnitA, sameUnitB, sameUnitC],
+  contradictoryManualOverrides,
+  emptyAliases
+);
+const reversedContradictoryManual = matcher.buildListingIndex(
+  [sameUnitC, sameUnitB, sameUnitA],
+  {
+    ...contradictoryManualOverrides,
+    buildingPairs: [...contradictoryManualOverrides.buildingPairs].reverse()
+  },
+  emptyAliases
+);
+assert.deepEqual(
+  canonicalIndexShape(contradictoryManual),
+  canonicalIndexShape(reversedContradictoryManual)
+);
+assert.equal(contradictoryManual.groups.some(group => (
+  group.memberKeys.includes(sameUnitB.listingKey) &&
+  group.memberKeys.includes(sameUnitC.listingKey)
+)), false);
+
+const deduplicatedBuildingCandidates = matcher.buildListingIndex(
+  [sameUnitA, sameUnitB, candidateBuilding],
+  emptyOverrides,
+  emptyAliases
+).candidates.filter(candidate => candidate.scope === 'building');
+assert.equal(deduplicatedBuildingCandidates.length, 1);
+assert.equal([
+  deduplicatedBuildingCandidates[0].leftMemberKeys,
+  deduplicatedBuildingCandidates[0].rightMemberKeys
+].some(memberKeys => (
+  memberKeys.includes(sameUnitA.listingKey) && memberKeys.includes(sameUnitB.listingKey)
+)), true);
+
+assert.deepEqual(matcher.diffUnitListings([
+  { listingKey: 'SUUMO:missing-null', priceMan: null },
+  { listingKey: 'HOMES:missing-empty', priceMan: '' },
+  { listingKey: 'ATHOME:priced', priceMan: 12000 }
+]), {
+  minPriceMan: 12000,
+  fieldsWithDifferences: [],
+  priceDiffByKey: {
+    'SUUMO:missing-null': null,
+    'HOMES:missing-empty': null,
+    'ATHOME:priced': 0
+  }
+});
