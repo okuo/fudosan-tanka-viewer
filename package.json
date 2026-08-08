@@ -1,6 +1,6 @@
 {
   "name": "fudosan-tanka-viewer",
-  "version": "1.11.0",
+  "version": "1.12.0",
   "private": true,
   "scripts": {
     "build:local": "bash scripts/build-local.sh",

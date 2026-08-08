@@ -167,7 +167,42 @@ async function seedExtensionStorage(context, extensionId) {
         repairFundMode: 'none',
         monthlyCostLimit: ''
       },
-      lastSeenReleaseNotesVersion: version
+      lastSeenReleaseNotesVersion: version,
+      observedListingsV1: {
+        version: 1,
+        items: [
+          {
+            listingKey: 'SUUMO:store-cross-1', site: 'SUUMO', url: 'https://suumo.jp/store-cross-1',
+            rawName: 'パークタワー晴海', normalizedBuildingName: 'パークタワー晴海',
+            rawAddress: '東京都中央区晴海2-3-30', normalizedAddress: '東京都中央区晴海2-3-30',
+            municipalityTownKey: '東京都中央区晴海', addressBlockKey: '東京都中央区晴海2-3-30',
+            priceMan: 12800, areaSqm: 72.91, floor: 48, layout: '3LDK',
+            managementFeeYen: 22000, repairFundYen: 15000, brokerageName: '晴海不動産',
+            listingStatus: 'active', lastSeenAt: '2026-07-19T09:00:00.000Z'
+          },
+          {
+            listingKey: 'HOMES:store-cross-2', site: 'HOMES', url: 'https://www.homes.co.jp/store-cross-2',
+            rawName: 'パークタワー晴海', normalizedBuildingName: 'パークタワー晴海',
+            rawAddress: '東京都中央区晴海2-3-30', normalizedAddress: '東京都中央区晴海2-3-30',
+            municipalityTownKey: '東京都中央区晴海', addressBlockKey: '東京都中央区晴海2-3-30',
+            priceMan: 13000, areaSqm: 72.9, floor: 48, layout: '3LDK',
+            managementFeeYen: 23000, repairFundYen: 15000, brokerageName: '湾岸住宅',
+            listingStatus: 'active', lastSeenAt: '2026-07-19T09:05:00.000Z'
+          },
+          {
+            listingKey: 'ATHOME:store-cross-3', site: 'ATHOME', url: 'https://www.athome.co.jp/store-cross-3',
+            rawName: 'パークタワー晴海', normalizedBuildingName: 'パークタワー晴海',
+            rawAddress: '東京都中央区晴海2-3-30', normalizedAddress: '東京都中央区晴海2-3-30',
+            municipalityTownKey: '東京都中央区晴海', addressBlockKey: '東京都中央区晴海2-3-30',
+            priceMan: 11500, areaSqm: 68.42, floor: 31, layout: '2LDK',
+            listingStatus: 'active', lastSeenAt: '2026-07-19T09:10:00.000Z'
+          }
+        ]
+      },
+      listingMatchOverridesV1: { version: 1, buildingPairs: [], unitPairs: [] },
+      buildingAliasesV1: { version: 1, entries: [] },
+      crossSiteMatchingSettingsV1: { enabled: true, retentionDays: 90 },
+      crossSitePendingSelectionV1: 'SUUMO:store-cross-1'
     }, resolve);
   }), { favorites: storeFavorites(), version: CURRENT_VERSION });
   await page.close();
@@ -774,7 +809,7 @@ async function captureSidePanelRaw(context, extensionId) {
   const page = await context.newPage();
   await page.setViewportSize({ width: 540, height: 800 });
   await page.goto(`chrome-extension://${extensionId}/sidepanel.html`);
-  await page.waitForSelector('.side-compare-table', { timeout: 10000 });
+  await page.waitForSelector('.cross-site-building-card', { timeout: 10000 });
   await page.waitForTimeout(250);
   const buffer = await page.screenshot({ fullPage: false });
   await page.close();
@@ -921,13 +956,13 @@ async function captureSidePanel(context, extensionId) {
     panelWidth: 540,
     panelHeight: 800,
     fileName: '04-sidepanel-compare.png',
-    title: 'Side Panelで見ながら比較',
-    subtitle: '物件ページを開いたまま、比較表、類似候補、内見メモ、価格ウォッチを横に置けます。',
+    title: '4サイト横断で同じ物件を比較',
+    subtitle: '閲覧履歴内で見つけた同じマンション・住戸をまとめ、サイト別の価格差や記載差を確認できます。',
     cards: [
-      { label: '比較', value: '価格・坪単価・月額' },
-      { label: '内見', value: '確認メモ' },
-      { label: '価格', value: '値下がり検知' },
-      { label: '出力', value: 'CSV対応' }
+      { label: '照合範囲', value: '閲覧履歴内' },
+      { label: '比較', value: '価格・管理費・修繕積立金' },
+      { label: '階層', value: 'マンション / 住戸 / 掲載' },
+      { label: '保存先', value: 'ブラウザ内のみ' }
     ]
   });
 }

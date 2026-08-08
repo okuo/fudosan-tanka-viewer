@@ -15,6 +15,8 @@ mkdir -p "$DIST_DIR/icons"
 
 files=(
   manifest.json
+  property-matcher.js
+  observed-listings-store.js
   background.js
   content.js
   styles.css

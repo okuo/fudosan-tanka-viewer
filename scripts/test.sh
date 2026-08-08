@@ -18,6 +18,14 @@ fi
 "$NODE_BIN" --check background.js
 "$NODE_BIN" --check scripts/make-local-manifest.js
 "$NODE_BIN" --check tests/e2e_extension.js
+
+for file in property-matcher.js observed-listings-store.js; do
+  grep -q "$file" build.sh
+  grep -q "$file" scripts/build-local.sh
+  grep -q "$file" .github/workflows/ci.yml
+  grep -q "$file" .github/workflows/release.yml
+done
+
 "$NODE_BIN" test_property_matcher.js
 "$NODE_BIN" test_observed_listings_store.js
 "$NODE_BIN" test_csv_export.js

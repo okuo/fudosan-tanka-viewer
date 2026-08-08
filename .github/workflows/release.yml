@@ -25,11 +25,15 @@ jobs:
 
       - name: Run JavaScript smoke tests
         run: |
+          node --check property-matcher.js
+          node --check observed-listings-store.js
           node --check content.js
           node --check popup.js
           node --check sidepanel.js
           node --check background.js
           node --check tests/e2e_extension.js
+          node test_property_matcher.js
+          node test_observed_listings_store.js
           node test_csv_export.js
           node test_background.js
 
