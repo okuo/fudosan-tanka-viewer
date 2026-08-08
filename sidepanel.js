@@ -15,6 +15,7 @@ let sideChecklistSaveTimer = null;
 let sideRecheckInProgress = false;
 let sideSimilarAiSummary = null;
 let sideSimilarAiInProgress = false;
+let sideSimilarAiGenerationToken = 0;
 let sideObservedListings = [];
 let sideMatchOverrides = { version: 1, buildingPairs: [], unitPairs: [] };
 let sideBuildingAliases = { version: 1, entries: [] };
@@ -53,6 +54,19 @@ function normalizeSideLoanSettings(settings = {}) {
   };
 }
 
+function consumeCrossSitePendingSelection(value) {
+  const listingKey = String(value || '');
+  if (!listingKey) return false;
+  selectedCrossSiteListingKey = listingKey;
+  chrome.storage.local.set({ crossSitePendingSelectionV1: '' });
+  return true;
+}
+
+function invalidateSideSimilarAiSummary() {
+  sideSimilarAiGenerationToken += 1;
+  sideSimilarAiSummary = null;
+}
+
 function loadSidePanelData() {
   return new Promise((resolve) => {
     chrome.storage.local.get({
@@ -68,8 +82,9 @@ function loadSidePanelData() {
       sideObservedListings = Array.isArray(result.observedListingsV1?.items) ? result.observedListingsV1.items : [];
       sideMatchOverrides = result.listingMatchOverridesV1 || { version: 1, buildingPairs: [], unitPairs: [] };
       sideBuildingAliases = result.buildingAliasesV1 || { version: 1, entries: [] };
-      selectedCrossSiteListingKey = result.crossSitePendingSelectionV1 || '';
-      if (selectedCrossSiteListingKey) chrome.storage.local.set({ crossSitePendingSelectionV1: '' });
+      invalidateSideSimilarAiSummary();
+      selectedCrossSiteListingKey = '';
+      consumeCrossSitePendingSelection(result.crossSitePendingSelectionV1);
       if (!selectedFavoriteUrl && sideFavorites[0]) {
         selectedFavoriteUrl = sideFavorites[0].url;
       }
@@ -634,6 +649,7 @@ async function generateSideSimilarAiSummary() {
     return;
   }
 
+  const generationToken = ++sideSimilarAiGenerationToken;
   sideSimilarAiInProgress = true;
   renderCrossSiteGroupsSafely();
 
@@ -672,11 +688,15 @@ async function generateSideSimilarAiSummary() {
       response = await session.prompt(`${prompt}\n\nJSON以外を書かず、必ず {"summaries":[{"comment":"..."}]} の形で返してください。`);
     }
 
-    sideSimilarAiSummary = parseSideSimilarSummary(response, groups);
-    setSideStatus('横断掲載のAI短評を生成しました');
+    if (generationToken === sideSimilarAiGenerationToken) {
+      sideSimilarAiSummary = parseSideSimilarSummary(response, groups);
+      setSideStatus('横断掲載のAI短評を生成しました');
+    }
   } catch (error) {
     console.error('[坪たん Side Panel] 横断掲載AI短評生成エラー:', error);
-    setSideStatus(error.message || 'AI短評を生成できませんでした');
+    if (generationToken === sideSimilarAiGenerationToken) {
+      setSideStatus(error.message || 'AI短評を生成できませんでした');
+    }
   } finally {
     if (session?.destroy) session.destroy();
     sideSimilarAiInProgress = false;
@@ -1265,7 +1285,7 @@ function setupSidePanelEvents() {
   });
 
   document.getElementById('side-search-input')?.addEventListener('input', () => {
-    sideSimilarAiSummary = null;
+    invalidateSideSimilarAiSummary();
     renderSidePanel();
   });
   document.getElementById('side-recheck')?.addEventListener('click', requestSideRecheck);
@@ -1276,6 +1296,9 @@ function setupSidePanelEvents() {
 
   chrome.storage.onChanged.addListener((changes, areaName) => {
     if (areaName !== 'local') return;
+    if (changes.crossSitePendingSelectionV1?.newValue) {
+      consumeCrossSitePendingSelection(changes.crossSitePendingSelectionV1.newValue);
+    }
     if (changes.favorites) sideFavorites = changes.favorites.newValue || [];
     if (changes.loanSettings) sideLoanSettings = normalizeSideLoanSettings(changes.loanSettings.newValue);
     if (changes.observedListingsV1) sideObservedListings = changes.observedListingsV1.newValue?.items || [];
@@ -1292,7 +1315,7 @@ function setupSidePanelEvents() {
       changes.listingMatchOverridesV1 ||
       changes.buildingAliasesV1
     ) {
-      sideSimilarAiSummary = null;
+      invalidateSideSimilarAiSummary();
     }
     renderSidePanel();
   });

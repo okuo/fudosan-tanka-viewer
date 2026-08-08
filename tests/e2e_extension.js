@@ -541,7 +541,6 @@ async function testCrossSiteSidePanel(context, extensionId) {
   await page.evaluate(() => new Promise(resolve => chrome.storage.local.set({
     crossSitePendingSelectionV1: 'REHOUSE:candidate'
   }, resolve)));
-  await page.reload();
   await page.waitForSelector('.cross-site-candidate--selected', { timeout: 10000 });
   const selectedMemberKeys = JSON.parse(
     await page.locator('.cross-site-candidate--selected').getAttribute('data-cross-site-member-keys')
@@ -560,6 +559,53 @@ async function testCrossSiteSidePanel(context, extensionId) {
     await page.locator('#side-status').innerText(),
     /保存期間の終了などで見つかりませんでした/
   );
+
+  await page.reload();
+  await page.evaluate(() => {
+    globalThis.LanguageModel = {
+      availability: async () => 'available',
+      create: async () => ({
+        prompt: () => new Promise((resolve) => {
+          globalThis.__resolveCrossSiteAiPrompt = resolve;
+        }),
+        destroy() {}
+      })
+    };
+    document.getElementById('side-search-input').dispatchEvent(new Event('input'));
+  });
+  await page.waitForFunction(() => !document.getElementById('side-similar-ai').disabled);
+  await page.locator('#side-similar-ai').click();
+  await page.waitForFunction(() => typeof globalThis.__resolveCrossSiteAiPrompt === 'function');
+  await page.evaluate(() => new Promise(resolve => chrome.storage.local.set({
+    observedListingsV1: {
+      version: 1,
+      items: [
+        {
+          listingKey: 'SUUMO:ai-b-1', site: 'SUUMO', url: 'https://suumo.jp/ai-b-1',
+          rawName: 'AIグループB', normalizedBuildingName: 'aiグループb',
+          rawAddress: '東京都港区芝1-2-3', normalizedAddress: '東京都港区芝1-2-3',
+          municipalityTownKey: '東京都港区芝', addressBlockKey: '東京都港区芝1-2-3',
+          priceMan: 8000, areaSqm: 60, floor: 8, layout: '2LDK',
+          lastSeenAt: '2026-07-19T01:00:00.000Z'
+        },
+        {
+          listingKey: 'HOMES:ai-b-2', site: 'HOMES', url: 'https://www.homes.co.jp/ai-b-2',
+          rawName: 'AIグループB', normalizedBuildingName: 'aiグループb',
+          rawAddress: '東京都港区芝1-2-3', normalizedAddress: '東京都港区芝1-2-3',
+          municipalityTownKey: '東京都港区芝', addressBlockKey: '東京都港区芝1-2-3',
+          priceMan: 8100, areaSqm: 60, floor: 8, layout: '2LDK',
+          lastSeenAt: '2026-07-19T01:01:00.000Z'
+        }
+      ]
+    }
+  }, resolve)));
+  await page.waitForFunction(() => document.querySelector('.cross-site-building-title')?.textContent === 'AIグループB');
+  await page.evaluate(() => {
+    globalThis.__resolveCrossSiteAiPrompt({ summaries: [{ comment: 'STALE_GROUP_A' }] });
+  });
+  await page.waitForFunction(() => document.getElementById('side-similar-ai').textContent === 'AI短評');
+  assert.equal(await page.locator('.side-similar-ai-comment').count(), 0);
+  assert.doesNotMatch(await page.locator('#side-similar-groups').innerText(), /STALE_GROUP_A/);
   await page.close();
 }
 
