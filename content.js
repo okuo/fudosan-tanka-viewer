@@ -20,6 +20,7 @@ const crossSitePendingRecords = new Map();
 const crossSiteKnownRecords = new Map();
 const crossSiteAnchorsByKey = new Map();
 const crossSiteDetailRegisteredKeys = new Set();
+const crossSiteSummariesByKey = new Map();
 let crossSiteFlushTimer = null;
 let currentCrossSiteSettings = { enabled: true, retentionDays: 90 };
 
@@ -2690,7 +2691,14 @@ function registerCrossSiteRecord(record, anchor, options = {}) {
   }
   const alreadyRegistered = options.oncePerPage === true && crossSiteDetailRegisteredKeys.has(record.listingKey);
   if (options.oncePerPage === true) crossSiteDetailRegisteredKeys.add(record.listingKey);
-  if (currentCrossSiteSettings.enabled === false || alreadyRegistered) return;
+  if (alreadyRegistered) {
+    const cachedSummary = crossSiteSummariesByKey.get(record.listingKey);
+    if (currentCrossSiteSettings.enabled !== false && cachedSummary) {
+      renderCrossSiteBadge(record.listingKey, cachedSummary);
+    }
+    return;
+  }
+  if (currentCrossSiteSettings.enabled === false) return;
   crossSitePendingRecords.set(record.listingKey, record);
   window.clearTimeout(crossSiteFlushTimer);
   crossSiteFlushTimer = window.setTimeout(flushCrossSiteRecords, 250);
@@ -2702,8 +2710,11 @@ async function flushCrossSiteRecords() {
   if (!records.length) return;
   try {
     const response = await chrome.runtime.sendMessage({ type: 'CROSS_SITE_UPSERT', records });
-    if (!response?.ok || response.disabled || currentCrossSiteSettings.enabled === false) return;
-    Object.entries(response.summaries || {}).forEach(([listingKey, summary]) => renderCrossSiteBadge(listingKey, summary));
+    if (!response?.ok || response.disabled) return;
+    const summaries = Object.entries(response.summaries || {});
+    summaries.forEach(([listingKey, summary]) => crossSiteSummariesByKey.set(listingKey, summary));
+    if (currentCrossSiteSettings.enabled === false) return;
+    summaries.forEach(([listingKey, summary]) => renderCrossSiteBadge(listingKey, summary));
   } catch (error) {
     logError('横断照合の保存に失敗:', error);
   }

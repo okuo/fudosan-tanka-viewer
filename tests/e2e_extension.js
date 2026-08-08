@@ -460,6 +460,38 @@ async function testDetailObservationIsStable(context, extensionId) {
   await storageProbe.goto(`chrome-extension://${extensionId}/popup.html`);
   await removeObservedRecord(storageProbe, fixtureCase);
   fixtureCase.observedAfter = Date.now();
+  await storageProbe.evaluate((seenAt) => new Promise((resolve) => {
+    const counterpart = {
+      site: 'HOMES',
+      sourceListingId: 'stable-counterpart',
+      listingKey: 'HOMES:stable-counterpart',
+      url: 'https://www.homes.co.jp/mansion/b-stable-counterpart/',
+      pageType: 'list',
+      rawName: '晴海クロノレジデンス',
+      rawAddress: '東京都中央区晴海2-3-30',
+      normalizedBuildingName: '晴海クロノレジデンス',
+      normalizedAddress: '東京都中央区晴海2-3-30',
+      municipalityTownKey: '東京都中央区晴海',
+      addressBlockKey: '東京都中央区晴海2-3-30',
+      areaSqm: 72.91,
+      floor: 48,
+      layout: '3LDK',
+      listingStatus: 'active',
+      firstSeenAt: seenAt,
+      lastSeenAt: seenAt
+    };
+    chrome.storage.local.get({ observedListingsV1: { version: 1, items: [] } }, (result) => {
+      chrome.storage.local.set({
+        observedListingsV1: {
+          ...result.observedListingsV1,
+          items: [
+            ...result.observedListingsV1.items.filter(item => item.listingKey !== counterpart.listingKey),
+            counterpart
+          ]
+        }
+      }, resolve);
+    });
+  }), new Date().toISOString());
   await context.route(fixtureCase.url, route => route.fulfill({
     status: 200,
     contentType: 'text/html; charset=utf-8',
@@ -469,6 +501,9 @@ async function testDetailObservationIsStable(context, extensionId) {
   await page.goto(fixtureCase.url);
   await page.waitForSelector('.fudosan-unit-price', { timeout: 10000 });
   const firstRecord = await assertObservedRecord(storageProbe, fixtureCase);
+  await page.waitForSelector('.fudosan-cross-site-badge', { timeout: 10000 });
+  assert.match(await page.locator('.fudosan-cross-site-badge').innerText(), /横断一致 [2-9]\d*サイト/);
+  assert.match(await page.locator('.fudosan-cross-site-caption').innerText(), /閲覧履歴内/);
 
   await page.evaluate(() => {
     window.__detailOriginalAnchor = document.querySelector('.fudosan-unit-price:not(.fudosan-unit-price--compact)');
@@ -485,6 +520,9 @@ async function testDetailObservationIsStable(context, extensionId) {
     await page.locator('.fudosan-unit-price:not(.fudosan-unit-price--compact)').first().getAttribute('data-cross-site-listing-key'),
     'SUUMO:999999'
   );
+  await page.waitForSelector('.fudosan-cross-site-badge', { timeout: 10000 });
+  assert.match(await page.locator('.fudosan-cross-site-badge').innerText(), /横断一致 [2-9]\d*サイト/);
+  assert.match(await page.locator('.fudosan-cross-site-caption').innerText(), /閲覧履歴内/);
   const secondRecord = await readObservedRecord(storageProbe, fixtureCase);
   assert.equal(secondRecord.lastSeenAt, firstRecord.lastSeenAt);
 
