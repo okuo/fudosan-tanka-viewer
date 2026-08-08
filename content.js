@@ -16,6 +16,12 @@ let favoriteDataByUrl = new Map();
 const syncedFavoriteUrls = new Set();
 let lastLoanSettingsSaveAt = 0;
 
+const crossSitePendingRecords = new Map();
+const crossSiteKnownRecords = new Map();
+const crossSiteAnchorsByKey = new Map();
+let crossSiteFlushTimer = null;
+let currentCrossSiteSettings = { enabled: true, retentionDays: 90 };
+
 const DEFAULT_LOAN_SETTINGS = {
   annualRatePercent: 0.8,
   years: 35,
@@ -726,6 +732,17 @@ async function loadHighlightSettings() {
   const result = await getStorageData({ highlightSettings: DEFAULT_HIGHLIGHT_SETTINGS });
   currentHighlightSettings = normalizeHighlightSettings(result.highlightSettings);
   return currentHighlightSettings;
+}
+
+function loadCrossSiteContentSettings() {
+  return new Promise((resolve) => {
+    chrome.storage.local.get({
+      crossSiteMatchingSettingsV1: { enabled: true, retentionDays: 90 }
+    }, (result) => {
+      currentCrossSiteSettings = result.crossSiteMatchingSettingsV1;
+      resolve();
+    });
+  });
 }
 
 async function saveHighlightSettings(settings) {
@@ -2537,6 +2554,148 @@ function extractPropertyName(card) {
   return '';
 }
 
+function extractObservedListAddress(card, csvAddress = '') {
+  const selectorsBySite = {
+    SUUMO: ['.cassetteitem_detail-col1', '[class*="address"]'],
+    REHOUSE: ['.property-card-address', '.property-address', '[class*="address"]'],
+    ATHOME: ['.property-address', '.address', '[class*="address"]'],
+    HOMES: ['.bukkenAdress', '[class*="address"]']
+  };
+  for (const selector of selectorsBySite[SITE_TYPE] || []) {
+    const value = card.closest('.card-box-inner, .property-index-card')?.querySelector(selector)?.textContent?.trim()
+      || card.querySelector(selector)?.textContent?.trim();
+    if (value) return value.replace(/^所在地\s*[:：]?\s*/, '');
+  }
+  const labeled = (card.textContent || '').match(/(?:所在地|住所)\s*[:：]?\s*([^\n]+)/);
+  return labeled?.[1]?.trim() || csvAddress;
+}
+
+function buildObservedListRecord(card, values) {
+  const csv = extractListCsvData(card);
+  const text = card.textContent || '';
+  const floorMatch = text.match(/(?:所在階|階数)?\s*(\d+)階/);
+  return FudosanPropertyMatcher.prepareListingRecord({
+    site: SITE_TYPE,
+    sourceListingId: FudosanPropertyMatcher.extractSourceListingId(values.url, SITE_TYPE),
+    url: values.url,
+    pageType: 'list',
+    rawName: values.name || csv.name,
+    rawAddress: extractObservedListAddress(card, csv.address),
+    priceMan: values.price,
+    areaSqm: values.area,
+    layout: csv.layout,
+    floor: floorMatch ? floorMatch[1] : '',
+    managementFeeYen: values.managementFee,
+    repairFundYen: values.repairFund,
+    listingStatus: values.listingStatus || 'active'
+  }, new Date().toISOString());
+}
+
+function observedDetailText(labels) {
+  const result = findLabeledValue(document, label => labels.some(item => label.includes(item)));
+  return result?.text || '';
+}
+
+function buildObservedDetailRecord(favoriteInfo) {
+  const heading = document.querySelector('h1')?.textContent?.trim() || favoriteInfo.name;
+  const bodyText = document.body.textContent || '';
+  const roomMatch = `${heading}\n${bodyText}`.match(/(?:号室|部屋番号)[^\d]*(\d{3,5})|\b(\d{3,5})号室/);
+  return FudosanPropertyMatcher.prepareListingRecord({
+    site: SITE_TYPE,
+    sourceListingId: FudosanPropertyMatcher.extractSourceListingId(favoriteInfo.url, SITE_TYPE),
+    url: favoriteInfo.url,
+    pageType: 'detail',
+    rawName: heading,
+    rawAddress: observedDetailText(['所在地', '住所']),
+    priceMan: favoriteInfo.price,
+    areaSqm: favoriteInfo.area,
+    layout: observedDetailText(['間取り']),
+    floor: observedDetailText(['所在階', '階数 / 階建', '階数／階建']),
+    roomNumber: roomMatch?.[1] || roomMatch?.[2] || '',
+    builtAt: observedDetailText(['築年月']),
+    totalUnits: observedDetailText(['総戸数']),
+    buildingFloors: observedDetailText(['建物階数', '階建']),
+    direction: observedDetailText(['向き', '主要採光面']),
+    balconyAreaSqm: observedDetailText(['バルコニー面積']),
+    managementFeeYen: favoriteInfo.managementFee,
+    repairFundYen: favoriteInfo.repairFund,
+    brokerageName: observedDetailText(['取扱店舗', '不動産会社', 'お問い合わせ先']),
+    listingStatus: favoriteDataByUrl.get(favoriteInfo.url)?.listingStatus || 'active'
+  }, new Date().toISOString());
+}
+
+function badgeTextForSummary(summary) {
+  if (summary.sameUnitSiteCount >= 2) return `横断一致 ${summary.sameUnitSiteCount}サイト`;
+  if (summary.candidateCount > 0) return `同一候補 ${summary.candidateCount}件`;
+  if (summary.buildingSiteCount >= 2 && summary.buildingUnitCount > 1) return `同じマンションに${summary.buildingUnitCount}住戸`;
+  return '';
+}
+
+function prepareCrossSiteRecordSafely(factory) {
+  try {
+    return factory();
+  } catch (error) {
+    logError('横断照合の物件情報を作成できませんでした:', error);
+    return null;
+  }
+}
+
+function renderCrossSiteBadge(listingKey, summary) {
+  const label = badgeTextForSummary(summary || {});
+  const anchors = (crossSiteAnchorsByKey.get(listingKey) || []).filter(anchor => anchor.isConnected);
+  if (anchors.length) {
+    crossSiteAnchorsByKey.set(listingKey, anchors);
+  } else {
+    crossSiteAnchorsByKey.delete(listingKey);
+  }
+  anchors.forEach((anchor) => {
+    anchor.querySelector('.fudosan-cross-site-badge-wrap')?.remove();
+    if (!label) return;
+    const wrap = document.createElement('div');
+    wrap.className = 'fudosan-cross-site-badge-wrap';
+    const button = document.createElement('button');
+    button.type = 'button';
+    button.className = 'fudosan-cross-site-badge';
+    button.textContent = label;
+    button.addEventListener('click', () => {
+      chrome.runtime.sendMessage({ type: 'CROSS_SITE_OPEN', listingKey });
+    });
+    const caption = document.createElement('span');
+    caption.className = 'fudosan-cross-site-caption';
+    caption.textContent = '閲覧履歴内で他サイトの掲載を検出';
+    wrap.append(button, caption);
+    anchor.appendChild(wrap);
+  });
+}
+
+function registerCrossSiteRecord(record, anchor) {
+  if (!record?.listingKey) return;
+  crossSiteKnownRecords.set(record.listingKey, record);
+  if (anchor) {
+    anchor.dataset.crossSiteListingKey = record.listingKey;
+    const anchors = (crossSiteAnchorsByKey.get(record.listingKey) || []).filter(existing => existing.isConnected);
+    if (!anchors.includes(anchor)) anchors.push(anchor);
+    crossSiteAnchorsByKey.set(record.listingKey, anchors);
+  }
+  if (currentCrossSiteSettings.enabled === false) return;
+  crossSitePendingRecords.set(record.listingKey, record);
+  window.clearTimeout(crossSiteFlushTimer);
+  crossSiteFlushTimer = window.setTimeout(flushCrossSiteRecords, 250);
+}
+
+async function flushCrossSiteRecords() {
+  const records = Array.from(crossSitePendingRecords.values());
+  crossSitePendingRecords.clear();
+  if (!records.length) return;
+  try {
+    const response = await chrome.runtime.sendMessage({ type: 'CROSS_SITE_UPSERT', records });
+    if (!response?.ok || response.disabled || currentCrossSiteSettings.enabled === false) return;
+    Object.entries(response.summaries || {}).forEach(([listingKey, summary]) => renderCrossSiteBadge(listingKey, summary));
+  } catch (error) {
+    logError('横断照合の保存に失敗:', error);
+  }
+}
+
 // ============================================================
 // 物件処理（一覧ページ）
 // ============================================================
@@ -2826,6 +2985,16 @@ function processProperty(element) {
       age: extractAgeTextFromProperty(propertyText),
       station: extractStationTextFromProperty(propertyText)
     };
+    const crossSiteRecord = prepareCrossSiteRecordSafely(() => buildObservedListRecord(element, {
+      url: propertyUrl,
+      name: favoriteInfo.name,
+      price,
+      area,
+      managementFee: listFees.managementFee,
+      repairFund: listFees.repairFund,
+      listingStatus: watchedFavorite?.listingStatus || 'active'
+    }));
+    registerCrossSiteRecord(crossSiteRecord, unitPriceDiv);
     const favBtn = createFavoriteButton(favoriteInfo);
     unitPriceDiv.appendChild(favBtn);
     syncFavoritePropertyData(favoriteInfo);
@@ -2967,6 +3136,7 @@ function processDetailPage() {
 
   // 価格と面積が取得できた場合、各箇所に表示
   if (detailPrice && detailArea && detailPrice > 0 && detailArea > 0) {
+    let primaryCrossSiteAnchor = null;
     const { tsuboPrice, heiheiPrice } = getOrCalculateUnitPrice(detailPrice, detailArea);
     log('計算完了 - 坪単価:', tsuboPrice, '万円/坪, 平米単価:', heiheiPrice, '万円/㎡');
 
@@ -2991,6 +3161,7 @@ function processDetailPage() {
       age: extractAgeTextFromProperty(detailText),
       station: extractStationTextFromProperty(detailText)
     };
+    const detailRecord = prepareCrossSiteRecordSafely(() => buildObservedDetailRecord(favoriteInfo));
     aiPropertyMemoContext = createAiPropertyMemoContext({
       url: detailUrl,
       name: detailName,
@@ -3017,6 +3188,7 @@ function processDetailPage() {
         const priceWatchDiv = createPriceWatchElement(getPriceWatchInfo(favoriteDataByUrl.get(favoriteInfo.url), detailPrice));
         if (priceWatchDiv) unitPriceDiv.appendChild(priceWatchDiv);
         insertUnitPriceAfterElement(topPriceElement, unitPriceDiv);
+        primaryCrossSiteAnchor = unitPriceDiv;
         log('上部に表示を挿入');
       }
     } else if (SITE_TYPE === 'REHOUSE' && priceElement) {
@@ -3042,6 +3214,7 @@ function processDetailPage() {
       } else {
         insertUnitPriceAfterElement(priceElement, unitPriceDiv);
       }
+      primaryCrossSiteAnchor = unitPriceDiv;
       log('価格表示の下に表示を挿入');
     } else if (SITE_TYPE === 'HOMES' && priceElement) {
       const unitPriceDiv = createUnitPriceElement(tsuboPrice, heiheiPrice, false);
@@ -3050,6 +3223,7 @@ function processDetailPage() {
       const priceWatchDiv = createPriceWatchElement(getPriceWatchInfo(favoriteDataByUrl.get(favoriteInfo.url), detailPrice));
       if (priceWatchDiv) unitPriceDiv.appendChild(priceWatchDiv);
       insertUnitPriceAfterElement(priceElement, unitPriceDiv);
+      primaryCrossSiteAnchor = unitPriceDiv;
       log('価格表示の下に表示を挿入');
     } else if (SITE_TYPE === 'ATHOME' && priceElement) {
       const unitPriceDiv = createUnitPriceElement(tsuboPrice, heiheiPrice, false);
@@ -3058,8 +3232,11 @@ function processDetailPage() {
       const priceWatchDiv = createPriceWatchElement(getPriceWatchInfo(favoriteDataByUrl.get(favoriteInfo.url), detailPrice));
       if (priceWatchDiv) unitPriceDiv.appendChild(priceWatchDiv);
       insertUnitPriceAfterElement(priceElement, unitPriceDiv);
+      primaryCrossSiteAnchor = unitPriceDiv;
       log('価格表示の下に表示を挿入');
     }
+
+    registerCrossSiteRecord(detailRecord, primaryCrossSiteAnchor);
 
     // テーブル内の価格行に追加（SUUMO専用）
     if (SITE_TYPE === 'SUUMO') {
@@ -3074,6 +3251,7 @@ function processDetailPage() {
             if (existing) existing.remove();
 
             const unitPriceDiv = createUnitPriceElement(tsuboPrice, heiheiPrice, true);
+            if (detailRecord) unitPriceDiv.dataset.crossSiteListingKey = detailRecord.listingKey;
             td.appendChild(unitPriceDiv);
             log('テーブル内に表示を挿入 table:', tableIdx, 'row:', rowIdx);
           }
@@ -4343,6 +4521,7 @@ async function init() {
     await loadLoanSettings();
     await loadHighlightSettings();
     await loadFavoriteUrls();
+    await loadCrossSiteContentSettings();
     log('設定・お気に入りデータ読み込み完了:', favoriteUrls.size, '件');
   } catch (error) {
     logError('初期データ読み込みエラー:', error);
@@ -4388,6 +4567,18 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   if (changes.highlightSettings) {
     currentHighlightSettings = normalizeHighlightSettings(changes.highlightSettings.newValue);
     processAllProperties();
+  }
+
+  if (areaName === 'local' && changes.crossSiteMatchingSettingsV1) {
+    currentCrossSiteSettings = changes.crossSiteMatchingSettingsV1.newValue || { enabled: true, retentionDays: 90 };
+    if (currentCrossSiteSettings.enabled === false) {
+      crossSitePendingRecords.clear();
+      window.clearTimeout(crossSiteFlushTimer);
+      document.querySelectorAll('.fudosan-cross-site-badge-wrap').forEach(element => element.remove());
+    } else {
+      crossSiteKnownRecords.forEach((record, listingKey) => crossSitePendingRecords.set(listingKey, record));
+      flushCrossSiteRecords();
+    }
   }
 });
 

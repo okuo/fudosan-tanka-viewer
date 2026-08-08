@@ -25,10 +25,13 @@ const EXTENSION_FILES = [
   'popup.html',
   'popup.js',
   'popup.css',
+  'property-matcher.js',
+  'observed-listings-store.js',
   'sidepanel.html',
   'sidepanel.js',
   'sidepanel.css',
   'icons/icon16.png',
+  'icons/icon32.png',
   'icons/icon48.png',
   'icons/icon128.png'
 ];
@@ -101,14 +104,14 @@ function buildSuumoFixture() {
 <body>
   <main>
     <div class="dottable--cassette">
-      <h2><a href="/ms/chuko/tokyo/sc_chuo/nc_123456/">晴海テストタワー</a></h2>
-      <div class="dottable-value">2億5990万円</div>
+      <h2><a href="/ms/chuko/tokyo/sc_chuo/nc_123456/">晴海クロノレジデンス</a></h2>
+      <div class="dottable-value">1億2,000万円</div>
       <dl>
-        <dt>物件名</dt><dd>晴海テストタワー</dd>
-        <dt>所在地</dt><dd>東京都中央区晴海1</dd>
-        <dt>専有面積</dt><dd>70.00㎡</dd>
+        <dt>物件名</dt><dd>晴海クロノレジデンス</dd>
+        <dt>所在地</dt><dd>東京都中央区晴海2-3-30</dd>
+        <dt>専有面積</dt><dd>72.91㎡</dd>
       </dl>
-      <p>3LDK 築12年 徒歩9分 管理費 18,000円 修繕積立金 12,600円</p>
+      <p>48階 3LDK 管理費 22,000円 修繕積立金 15,000円</p>
     </div>
   </main>
 </body>
@@ -126,23 +129,25 @@ function buildRehouseDetailFixture() {
   <main class="property-detail">
     <div class="property-detail-information">
       <div class="building-else-price-info">
-        <h1>リハウステストタワー</h1>
+        <h1>晴海クロノレジデンス</h1>
         <div class="building-content">
-          <div class="building-info">3LDK/100.00㎡(約30.25坪)</div>
+          <div class="building-info">3LDK/72.91㎡(約22.05坪)</div>
         </div>
       </div>
       <div class="building-price-info">
-        <p class="text-price-regular price-size"><span class="amount">10,000</span><span class="unit">万円</span></p>
+        <p class="text-price-regular price-size"><span class="amount">12,100</span><span class="unit">万円</span></p>
       </div>
     </div>
     <section class="property-detail-infos">
       <table>
         <tbody>
-          <tr class="table-row"><td class="table-header label">価格</td><td class="table-data content">10,000万円</td></tr>
-          <tr class="table-row"><td class="table-header label">管理費等</td><td class="table-data content"><span>33,900円</span></td></tr>
-          <tr class="table-row"><td class="table-header label">修繕積立金</td><td class="table-data content"><span>30,500円</span></td></tr>
-          <tr class="table-row"><td class="table-header label">専有面積</td><td class="table-data content">100.00㎡(約30.25坪)</td></tr>
-          <tr class="table-row"><td class="table-header label">階数 / 階建</td><td class="table-data content">20階 / 地上32階 地下2階建</td></tr>
+          <tr class="table-row"><td class="table-header label">価格</td><td class="table-data content">12,100万円</td></tr>
+          <tr class="table-row"><td class="table-header label">所在地</td><td class="table-data content">東京都中央区晴海2-3-30</td></tr>
+          <tr class="table-row"><td class="table-header label">間取り</td><td class="table-data content">3LDK</td></tr>
+          <tr class="table-row"><td class="table-header label">管理費等</td><td class="table-data content"><span>22,000円</span></td></tr>
+          <tr class="table-row"><td class="table-header label">修繕積立金</td><td class="table-data content"><span>15,000円</span></td></tr>
+          <tr class="table-row"><td class="table-header label">専有面積</td><td class="table-data content">72.91㎡(約22.05坪)</td></tr>
+          <tr class="table-row"><td class="table-header label">階数 / 階建</td><td class="table-data content">48階 / 地上50階 地下2階建</td></tr>
           <tr class="table-row"><td class="table-header label">総戸数</td><td class="table-data content">387戸</td></tr>
         </tbody>
       </table>
@@ -161,15 +166,18 @@ function buildAthomeDetailFixture() {
 </head>
 <body>
   <main>
-    <h1>アットホームテストレジデンス</h1>
+    <h1>晴海クロノレジデンス</h1>
     <section class="property-outline">
       <table>
         <tbody>
-          <tr><td class="label">価格</td><td class="value">7,620万円</td></tr>
-          <tr><td class="label">専有面積</td><td class="value">45.00m²（壁芯）</td></tr>
-          <tr><td class="label">管理費</td><td class="value">12,000円/月</td></tr>
-          <tr><td class="label">修繕積立金</td><td class="value">9,000円/月</td></tr>
-          <tr><td class="label">階建</td><td class="value">14階建</td></tr>
+          <tr><td class="label">価格</td><td class="value">1億2,200万円</td></tr>
+          <tr><td class="label">所在地</td><td class="value">東京都中央区晴海2-3-30</td></tr>
+          <tr><td class="label">間取り</td><td class="value">3LDK</td></tr>
+          <tr><td class="label">専有面積</td><td class="value">72.91m²（壁芯）</td></tr>
+          <tr><td class="label">管理費</td><td class="value">22,000円/月</td></tr>
+          <tr><td class="label">修繕積立金</td><td class="value">15,000円/月</td></tr>
+          <tr><td class="label">所在階</td><td class="value">48階</td></tr>
+          <tr><td class="label">階建</td><td class="value">50階建</td></tr>
           <tr><td class="label">総戸数</td><td class="value">120戸</td></tr>
         </tbody>
       </table>
@@ -189,32 +197,32 @@ function buildHomesDetailFixture() {
 <body>
   <main>
     <h1 class="heading">
-      <span id="chk-bkh-name">HOMESテストタワー</span>
-      <span id="chk-bkh-room">12階</span>
+      <span id="chk-bkh-name">晴海クロノレジデンス</span>
+      <span id="chk-bkh-room">48階</span>
     </h1>
     <div class="mod-detailTopSale">
       <div class="line">
         <dl>
           <dt>価格</dt>
-          <dd>8,880万円</dd>
+          <dd>1億2,300万円</dd>
         </dl>
       </div>
       <div class="line">
         <dl>
           <dt>専有面積</dt>
-          <dd id="chk-bkc-housearea">75.80m² (壁心)</dd>
+          <dd id="chk-bkc-housearea">72.91m² (壁心)</dd>
         </dl>
       </div>
       <div class="line">
         <dl>
           <dt>管理費</dt>
-          <dd>19,800円/月</dd>
+          <dd>22,000円/月</dd>
         </dl>
       </div>
       <div class="line">
         <dl>
           <dt>修繕積立金</dt>
-          <dd>15,160円/月</dd>
+          <dd>15,000円/月</dd>
         </dl>
       </div>
     </div>
@@ -222,8 +230,12 @@ function buildHomesDetailFixture() {
       <table>
         <tbody>
           <tr>
-            <th>総戸数</th><td id="chk-bkd-allunit">1822戸</td>
-            <th>所在階 / 階数</th><td id="chk-bkd-housekai">12階 / 14階建 (地下1階)</td>
+            <th>所在地</th><td>東京都中央区晴海2-3-30</td>
+            <th>間取り</th><td>3LDK</td>
+          </tr>
+          <tr>
+            <th>総戸数</th><td id="chk-bkd-allunit">883戸</td>
+            <th>所在階 / 階数</th><td id="chk-bkd-housekai">48階 / 50階建 (地下1階)</td>
           </tr>
         </tbody>
       </table>
@@ -231,6 +243,66 @@ function buildHomesDetailFixture() {
   </main>
 </body>
 </html>`;
+}
+
+function buildHomesListFixture() {
+  return `<!doctype html>
+<html lang="ja">
+<body>
+  <section class="bukkenSpec">
+    <table>
+      <tbody>
+        <tr><th class="bukkenName"><a href="/mansion/b-222/">晴海クロノレジデンス</a></th></tr>
+        <tr><td class="bukkenAdress">東京都中央区晴海2-3-30</td></tr>
+        <tr><td class="price">1億2,300万円</td><td class="space">72.91m²</td></tr>
+        <tr><td>48階 3LDK 管理費 23,000円 修繕積立金 16,000円</td></tr>
+      </tbody>
+    </table>
+  </section>
+</body>
+</html>`;
+}
+
+function buildSuumoDetailObservedFixture() {
+  return `<!doctype html><html lang="ja"><body>
+    <h1>晴海クロノレジデンス</h1>
+    <div class="mt7 b">1億2,000万円</div>
+    <table><tbody>
+      <tr><th>価格</th><td>1億2,000万円</td></tr>
+      <tr><th>専有面積</th><td>72.91㎡（壁芯）</td></tr>
+      <tr><th>所在地</th><td>東京都中央区晴海2-3-30</td></tr>
+      <tr><th>間取り</th><td>3LDK</td></tr>
+      <tr><th>所在階</th><td>48階 / 50階建</td></tr>
+      <tr><th>管理費</th><td>22,000円</td></tr>
+      <tr><th>修繕積立金</th><td>15,000円</td></tr>
+    </tbody></table>
+  </body></html>`;
+}
+
+function buildRehouseListObservedFixture() {
+  return `<!doctype html><html lang="ja"><body>
+    <article class="property-index-card">
+      <h2 class="property-card-title"><a href="/buy/mansion/bkdetail/RH-LIST-777/">晴海クロノレジデンス</a></h2>
+      <p class="property-card-address">東京都中央区晴海2-3-30</p>
+      <strong class="price-text">1億2,100万円</strong>
+      <p class="paragraph-body">専有面積 72.91㎡</p>
+      <p>48階 3LDK 管理費 22,000円 修繕積立金 15,000円</p>
+    </article>
+  </body></html>`;
+}
+
+function buildAthomeListObservedFixture() {
+  return `<!doctype html><html lang="ja"><body>
+    <article class="card-box-inner">
+      <h3 class="title-wrap__title-text"><a class="select-link" href="/mansion/7777777777/">晴海クロノレジデンス</a></h3>
+      <p class="property-address">東京都中央区晴海2-3-30</p>
+      <div class="card-box-inner__detail">
+        <strong class="property-price">1億2,200万円</strong>
+        <div class="property-detail-table__block">専有面積 <span>72.91m²</span></div>
+        <p>48階 3LDK 管理費 22,000円 修繕積立金 15,000円</p>
+      </div>
+    </article>
+  </body></html>`;
 }
 
 async function testContentScript(context) {
@@ -260,6 +332,119 @@ async function testContentScript(context) {
   await page.close();
 }
 
+async function assertObservedRecord(storageProbe, expected) {
+  const recordIdentity = {
+    site: expected.site,
+    pageType: expected.pageType,
+    sourceListingId: expected.sourceListingId
+  };
+  await storageProbe.waitForFunction(({ site, pageType, sourceListingId }) => new Promise((resolve) => {
+    chrome.storage.local.get({ observedListingsV1: { version: 1, items: [] } }, (result) => {
+      const record = result.observedListingsV1.items.find(item => (
+        item.site === site && item.pageType === pageType && item.sourceListingId === sourceListingId
+      ));
+      resolve(Boolean(
+        record?.rawName && record?.rawAddress && record?.normalizedBuildingName &&
+        record?.addressBlockKey && record?.areaSqm && record?.floor && record?.layout
+      ));
+    });
+  }), recordIdentity, { timeout: 10000 });
+}
+
+async function testCrossSiteContentBadge(context, extensionId) {
+  await context.route('https://www.homes.co.jp/mansion/chuko/list/**', route => route.fulfill({
+    status: 200,
+    contentType: 'text/html; charset=utf-8',
+    body: buildHomesListFixture()
+  }));
+  const storageProbe = await context.newPage();
+  await storageProbe.goto(`chrome-extension://${extensionId}/popup.html`);
+  const suumoPage = await context.newPage();
+  await suumoPage.goto('https://suumo.jp/ms/chuko/tokyo/sc_chuo/');
+  await storageProbe.waitForFunction(() => new Promise((resolve) => {
+    chrome.storage.local.get({ observedListingsV1: { items: [] } }, result => (
+      resolve(result.observedListingsV1.items.some(item => item.site === 'SUUMO'))
+    ));
+  }));
+
+  const homesPage = await context.newPage();
+  await homesPage.goto('https://www.homes.co.jp/mansion/chuko/list/');
+  await homesPage.waitForSelector('.fudosan-cross-site-badge', { timeout: 10000 });
+  assert.match(await homesPage.locator('.fudosan-cross-site-badge').innerText(), /横断一致 2サイト/);
+  assert.match(await homesPage.locator('.fudosan-cross-site-caption').innerText(), /閲覧履歴内/);
+  await suumoPage.reload();
+  await suumoPage.waitForSelector('.fudosan-cross-site-badge', { timeout: 10000 });
+  await suumoPage.evaluate(() => {
+    window.__crossSiteOriginalAnchor = document.querySelector('.fudosan-unit-price');
+    window.__crossSiteDetachedMutations = 0;
+    const observer = new MutationObserver((mutations) => {
+      window.__crossSiteDetachedMutations += mutations.length;
+    });
+    observer.observe(window.__crossSiteOriginalAnchor, { childList: true, subtree: true });
+    const externalNode = document.createElement('section');
+    externalNode.className = 'external-list-update';
+    document.body.appendChild(externalNode);
+  });
+  await suumoPage.waitForFunction(() => (
+    document.querySelector('.fudosan-unit-price') !== window.__crossSiteOriginalAnchor &&
+    Boolean(document.querySelector('.fudosan-cross-site-badge'))
+  ));
+  assert.equal(await suumoPage.evaluate(() => window.__crossSiteDetachedMutations), 0);
+  await storageProbe.evaluate(() => new Promise(resolve => chrome.storage.local.set({
+    crossSiteMatchingSettingsV1: { enabled: false, retentionDays: 90 }
+  }, resolve)));
+  await homesPage.waitForFunction(() => !document.querySelector('.fudosan-cross-site-badge'));
+  assert.equal(await homesPage.locator('.fudosan-cross-site-badge').count(), 0);
+  await storageProbe.evaluate(() => new Promise(resolve => chrome.storage.local.set({
+    crossSiteMatchingSettingsV1: { enabled: true, retentionDays: 90 }
+  }, resolve)));
+  await storageProbe.close();
+  await homesPage.close();
+  await suumoPage.close();
+  await context.unroute('https://www.homes.co.jp/mansion/chuko/list/**');
+}
+
+async function testObservedExtractionMatrix(context, extensionId) {
+  const storageProbe = await context.newPage();
+  await storageProbe.goto(`chrome-extension://${extensionId}/popup.html`);
+  const cases = [
+    { site: 'SUUMO', pageType: 'list', sourceListingId: '123456', url: 'https://suumo.jp/ms/chuko/tokyo/sc_chuo/', fixture: buildSuumoFixture },
+    { site: 'SUUMO', pageType: 'detail', sourceListingId: '888888', url: 'https://suumo.jp/ms/chuko/tokyo/sc_chuo/nc_888888/', fixture: buildSuumoDetailObservedFixture },
+    { site: 'REHOUSE', pageType: 'list', sourceListingId: 'RH-LIST-777', url: 'https://www.rehouse.co.jp/buy/mansion/prefecture/13/city/13102/', fixture: buildRehouseListObservedFixture },
+    { site: 'REHOUSE', pageType: 'detail', sourceListingId: 'F1FAGA2C', url: 'https://www.rehouse.co.jp/buy/mansion/bkdetail/F1FAGA2C/', fixture: buildRehouseDetailFixture },
+    { site: 'ATHOME', pageType: 'list', sourceListingId: '7777777777', url: 'https://www.athome.co.jp/mansion/chuko/tokyo/chuo-city/list/', fixture: buildAthomeListObservedFixture },
+    { site: 'ATHOME', pageType: 'detail', sourceListingId: '1234567890', url: 'https://www.athome.co.jp/mansion/1234567890/', fixture: buildAthomeDetailFixture },
+    { site: 'HOMES', pageType: 'list', sourceListingId: '222', url: 'https://www.homes.co.jp/mansion/chuko/list/', fixture: buildHomesListFixture },
+    { site: 'HOMES', pageType: 'detail', sourceListingId: '1193620002052', url: 'https://www.homes.co.jp/mansion/b-1193620002052/', fixture: buildHomesDetailFixture }
+  ];
+
+  for (const fixtureCase of cases) {
+    await storageProbe.evaluate(({ site, sourceListingId }) => new Promise((resolve) => {
+      const listingKey = `${site}:${sourceListingId}`;
+      chrome.storage.local.get({ observedListingsV1: { version: 1, items: [] } }, (result) => {
+        chrome.storage.local.set({
+          observedListingsV1: {
+            ...result.observedListingsV1,
+            items: result.observedListingsV1.items.filter(item => item.listingKey !== listingKey)
+          }
+        }, resolve);
+      });
+    }), { site: fixtureCase.site, sourceListingId: fixtureCase.sourceListingId });
+    await context.route(fixtureCase.url, route => route.fulfill({
+      status: 200,
+      contentType: 'text/html; charset=utf-8',
+      body: fixtureCase.fixture()
+    }));
+    const page = await context.newPage();
+    await page.goto(fixtureCase.url);
+    await page.waitForSelector('.fudosan-unit-price', { timeout: 10000 });
+    await assertObservedRecord(storageProbe, fixtureCase);
+    await page.close();
+    await context.unroute(fixtureCase.url);
+  }
+  await storageProbe.close();
+}
+
 async function testRehouseDetailPage(context) {
   await context.route('https://www.rehouse.co.jp/**', route => {
     route.fulfill({
@@ -276,12 +461,12 @@ async function testRehouseDetailPage(context) {
 
   const repairText = await page.locator('.fudosan-repair-fund').innerText();
   assert.match(repairText, /修繕積立金単価/);
-  assert.match(repairText, /305円\/㎡\/月/);
+  assert.match(repairText, /206円\/㎡\/月/);
   assert.match(repairText, /338円\/㎡/);
 
   const monthlyText = await page.locator('.fudosan-monthly-cost').innerText();
-  assert.match(monthlyText, /管理費 33,900円/);
-  assert.match(monthlyText, /修繕 30,500円/);
+  assert.match(monthlyText, /管理費 22,000円/);
+  assert.match(monthlyText, /修繕 15,000円/);
 
   await page.close();
 }
@@ -305,11 +490,11 @@ async function testAthomeDetailPage(context) {
 
   const repairText = await page.locator('.fudosan-repair-fund').innerText();
   assert.match(repairText, /修繕積立金単価/);
-  assert.match(repairText, /200円\/㎡\/月/);
+  assert.match(repairText, /206円\/㎡\/月/);
 
   const monthlyText = await page.locator('.fudosan-monthly-cost').innerText();
-  assert.match(monthlyText, /管理費 12,000円/);
-  assert.match(monthlyText, /修繕 9,000円/);
+  assert.match(monthlyText, /管理費 22,000円/);
+  assert.match(monthlyText, /修繕 15,000円/);
 
   await page.close();
 }
@@ -333,11 +518,11 @@ async function testHomesDetailPage(context) {
 
   const repairText = await page.locator('.fudosan-repair-fund').innerText();
   assert.match(repairText, /修繕積立金単価/);
-  assert.match(repairText, /200円\/㎡\/月/);
+  assert.match(repairText, /206円\/㎡\/月/);
 
   const monthlyText = await page.locator('.fudosan-monthly-cost').innerText();
-  assert.match(monthlyText, /管理費 19,800円/);
-  assert.match(monthlyText, /修繕 15,160円/);
+  assert.match(monthlyText, /管理費 22,000円/);
+  assert.match(monthlyText, /修繕 15,000円/);
 
   await page.close();
 }
@@ -468,6 +653,8 @@ async function main() {
     await testRehouseDetailPage(context);
     await testAthomeDetailPage(context);
     await testHomesDetailPage(context);
+    await testCrossSiteContentBadge(context, extensionId);
+    await testObservedExtractionMatrix(context, extensionId);
     await testPopup(context, extensionId);
 
     console.log('extension E2E tests passed');

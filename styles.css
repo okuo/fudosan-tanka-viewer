@@ -271,6 +271,47 @@
   font-size: 10px;
 }
 
+.fudosan-cross-site-badge-wrap {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid rgba(37, 99, 235, 0.18);
+  white-space: normal;
+}
+
+.fudosan-cross-site-badge {
+  appearance: none;
+  border: 1px solid #2563eb;
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: #eff6ff;
+  color: #1d4ed8;
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.fudosan-cross-site-badge:hover,
+.fudosan-cross-site-badge:focus-visible {
+  background: #dbeafe;
+  outline: 2px solid rgba(37, 99, 235, 0.22);
+  outline-offset: 1px;
+}
+
+.fudosan-cross-site-caption {
+  color: #64748b;
+  font-size: 10px;
+  font-weight: 500;
+}
+
+.fudosan-unit-price--compact .fudosan-cross-site-caption {
+  display: none;
+}
+
 /* =============================================
    Loan Simulation
    ============================================= */
