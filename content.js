@@ -19,6 +19,7 @@ let lastLoanSettingsSaveAt = 0;
 const crossSitePendingRecords = new Map();
 const crossSiteKnownRecords = new Map();
 const crossSiteAnchorsByKey = new Map();
+const crossSiteDetailRegisteredKeys = new Set();
 let crossSiteFlushTimer = null;
 let currentCrossSiteSettings = { enabled: true, retentionDays: 90 };
 
@@ -2592,12 +2593,22 @@ function buildObservedListRecord(card, values) {
 }
 
 function observedDetailText(labels) {
-  const result = findLabeledValue(document, label => labels.some(item => label.includes(item)));
+  const normalizedLabels = labels.map(normalizeTableLabel);
+  const result = findLabeledValue(document, label => normalizedLabels.some(item => label.includes(item)));
   return result?.text || '';
 }
 
+function observedDetailName(fallback = '') {
+  const siteNameElement = SITE_TYPE === 'HOMES'
+    ? document.querySelector('#chk-bkh-name')
+    : null;
+  return siteNameElement?.textContent?.trim()
+    || document.querySelector('h1')?.textContent?.trim()
+    || fallback;
+}
+
 function buildObservedDetailRecord(favoriteInfo) {
-  const heading = document.querySelector('h1')?.textContent?.trim() || favoriteInfo.name;
+  const heading = observedDetailName(favoriteInfo.name);
   const bodyText = document.body.textContent || '';
   const roomMatch = `${heading}\n${bodyText}`.match(/(?:号室|部屋番号)[^\d]*(\d{3,5})|\b(\d{3,5})号室/);
   return FudosanPropertyMatcher.prepareListingRecord({
@@ -2668,7 +2679,7 @@ function renderCrossSiteBadge(listingKey, summary) {
   });
 }
 
-function registerCrossSiteRecord(record, anchor) {
+function registerCrossSiteRecord(record, anchor, options = {}) {
   if (!record?.listingKey) return;
   crossSiteKnownRecords.set(record.listingKey, record);
   if (anchor) {
@@ -2677,7 +2688,9 @@ function registerCrossSiteRecord(record, anchor) {
     if (!anchors.includes(anchor)) anchors.push(anchor);
     crossSiteAnchorsByKey.set(record.listingKey, anchors);
   }
-  if (currentCrossSiteSettings.enabled === false) return;
+  const alreadyRegistered = options.oncePerPage === true && crossSiteDetailRegisteredKeys.has(record.listingKey);
+  if (options.oncePerPage === true) crossSiteDetailRegisteredKeys.add(record.listingKey);
+  if (currentCrossSiteSettings.enabled === false || alreadyRegistered) return;
   crossSitePendingRecords.set(record.listingKey, record);
   window.clearTimeout(crossSiteFlushTimer);
   crossSiteFlushTimer = window.setTimeout(flushCrossSiteRecords, 250);
@@ -3142,7 +3155,7 @@ function processDetailPage() {
 
     // 詳細ページのお気に入りボタン用情報
     const detailUrl = window.location.href;
-    const detailName = document.querySelector('h1')?.textContent?.trim() || '';
+    const detailName = observedDetailName();
     const detailFees = extractManagementAndRepairFees();
     const detailRepairFundInfo = extractDetailRepairFundInfo(detailArea);
     const detailRepairFundRisk = createRepairFundRiskSummary(detailRepairFundInfo.result);
@@ -3236,7 +3249,7 @@ function processDetailPage() {
       log('価格表示の下に表示を挿入');
     }
 
-    registerCrossSiteRecord(detailRecord, primaryCrossSiteAnchor);
+    registerCrossSiteRecord(detailRecord, primaryCrossSiteAnchor, { oncePerPage: true });
 
     // テーブル内の価格行に追加（SUUMO専用）
     if (SITE_TYPE === 'SUUMO') {
