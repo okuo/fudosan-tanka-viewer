@@ -440,6 +440,129 @@ async function testCrossSiteContentBadge(context, extensionId) {
   await context.unroute('https://www.homes.co.jp/mansion/chuko/list/**');
 }
 
+async function testCrossSiteSidePanel(context, extensionId) {
+  const page = await context.newPage();
+  await page.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await page.evaluate(() => new Promise((resolve) => chrome.storage.local.set({
+    observedListingsV1: {
+      version: 1,
+      items: [
+        {
+          listingKey: 'SUUMO:side-a', site: 'SUUMO', url: 'https://suumo.jp/side-a',
+          rawName: 'ザ・パークハウス新宿', normalizedBuildingName: 'ザパークハウス新宿',
+          rawAddress: '東京都新宿区西新宿1丁目2番3号', normalizedAddress: '東京都新宿区西新宿1-2-3',
+          municipalityTownKey: '東京都新宿区西新宿', addressBlockKey: '東京都新宿区西新宿1-2-3',
+          priceMan: 12000, areaSqm: 72.91, floor: 18, layout: '3LDK',
+          managementFeeYen: 22000, repairFundYen: 16000, listingStatus: 'active',
+          lastSeenAt: '2026-07-19T00:00:00.000Z'
+        },
+        {
+          listingKey: 'HOMES:side-b', site: 'HOMES', url: 'https://www.homes.co.jp/side-b',
+          rawName: 'ザ パークハウス 新宿', normalizedBuildingName: 'ザパークハウス新宿',
+          rawAddress: '東京都新宿区西新宿1-2-3', normalizedAddress: '東京都新宿区西新宿1-2-3',
+          municipalityTownKey: '東京都新宿区西新宿', addressBlockKey: '東京都新宿区西新宿1-2-3',
+          priceMan: 12300, areaSqm: 72.9, floor: 18, layout: '3LDK',
+          managementFeeYen: 23000, repairFundYen: 16000, listingStatus: 'active',
+          lastSeenAt: '2026-07-19T00:01:00.000Z'
+        },
+        {
+          listingKey: 'ATHOME:side-c', site: 'ATHOME', url: 'https://www.athome.co.jp/side-c',
+          rawName: 'ザパークハウス新宿', normalizedBuildingName: 'ザパークハウス新宿',
+          rawAddress: '東京都新宿区西新宿1-2-3', normalizedAddress: '東京都新宿区西新宿1-2-3',
+          municipalityTownKey: '東京都新宿区西新宿', addressBlockKey: '東京都新宿区西新宿1-2-3',
+          priceMan: 11800, areaSqm: 65.2, floor: 10, layout: '2LDK',
+          listingStatus: 'active', lastSeenAt: '2026-07-19T00:02:00.000Z'
+        }
+      ]
+    },
+    listingMatchOverridesV1: { version: 1, buildingPairs: [], unitPairs: [] },
+    buildingAliasesV1: { version: 1, entries: [] }
+  }, resolve)));
+  await page.reload();
+  await page.waitForSelector('.cross-site-building-card', { timeout: 10000 });
+  assert.equal(await page.locator('.cross-site-building-card').count(), 1);
+  assert.equal(await page.locator('.cross-site-unit-card').count(), 2);
+  assert.equal(await page.locator('.cross-site-listing-row').count(), 3);
+  assert.match(await page.locator('.cross-site-price-diff').first().innerText(), /300万円差/);
+  assert.equal(await page.locator('.cross-site-best').count(), 1);
+
+  await page.evaluate(() => new Promise((resolve) => {
+    chrome.storage.local.get({ observedListingsV1: { version: 1, items: [] } }, (result) => {
+      chrome.storage.local.set({
+        observedListingsV1: {
+          version: 1,
+          items: [...result.observedListingsV1.items, {
+            listingKey: 'REHOUSE:candidate',
+            site: 'REHOUSE',
+            url: 'https://www.rehouse.co.jp/buy/mansion/bkdetail/candidate/',
+            rawName: 'ザ パークハウス 新宿',
+            normalizedBuildingName: 'ザパークハウス新宿',
+            rawAddress: '東京都新宿区西新宿1丁目',
+            normalizedAddress: '東京都新宿区西新宿1',
+            municipalityTownKey: '東京都新宿区西新宿',
+            addressBlockKey: '',
+            areaSqm: 72.9,
+            floor: 48,
+            layout: '3LDK',
+            lastSeenAt: '2026-07-19T00:00:00.000Z'
+          }]
+        }
+      }, resolve);
+    });
+  }));
+  await page.waitForSelector('.cross-site-candidate', { timeout: 10000 });
+  assert.match(await page.locator('.cross-site-candidate').innerText(), /同一候補/);
+  await page.locator('.cross-site-candidate button', { hasText: '同じマンション' }).click();
+  await page.waitForFunction(() => new Promise(resolve => chrome.storage.local.get({
+    listingMatchOverridesV1: { buildingPairs: [] }
+  }, result => resolve(result.listingMatchOverridesV1.buildingPairs.some(pair => pair.decision === 'same')))));
+  await page.reload();
+  await page.waitForFunction(() => document.querySelectorAll('.cross-site-building-card').length === 1);
+  await page.locator('.cross-site-decision-clear').first().click();
+  await page.waitForFunction(() => new Promise(resolve => chrome.storage.local.get({
+    listingMatchOverridesV1: { buildingPairs: [] }
+  }, result => resolve(result.listingMatchOverridesV1.buildingPairs.length === 0))));
+  await page.reload();
+  await page.waitForSelector('.cross-site-candidate', { timeout: 10000 });
+  await page.locator('.cross-site-candidate button', { hasText: '別の物件' }).click();
+  await page.waitForFunction(() => new Promise(resolve => chrome.storage.local.get({
+    listingMatchOverridesV1: { buildingPairs: [] }
+  }, result => resolve(result.listingMatchOverridesV1.buildingPairs.some(pair => pair.decision === 'different')))));
+  await page.reload();
+  await page.waitForSelector('.cross-site-manual-decision', { timeout: 10000 });
+  assert.match(await page.locator('.cross-site-manual-decision').innerText(), /別のマンションとして確認済み/);
+  await page.locator('.cross-site-decision-clear').first().click();
+  await page.waitForFunction(() => new Promise(resolve => chrome.storage.local.get({
+    listingMatchOverridesV1: { buildingPairs: [] }
+  }, result => resolve(result.listingMatchOverridesV1.buildingPairs.length === 0))));
+  await page.reload();
+  await page.waitForSelector('.cross-site-candidate', { timeout: 10000 });
+
+  await page.evaluate(() => new Promise(resolve => chrome.storage.local.set({
+    crossSitePendingSelectionV1: 'REHOUSE:candidate'
+  }, resolve)));
+  await page.reload();
+  await page.waitForSelector('.cross-site-candidate--selected', { timeout: 10000 });
+  const selectedMemberKeys = JSON.parse(
+    await page.locator('.cross-site-candidate--selected').getAttribute('data-cross-site-member-keys')
+  );
+  assert.ok(selectedMemberKeys.includes('REHOUSE:candidate'));
+  const pendingState = await page.evaluate(() => new Promise(resolve => chrome.storage.local.get({
+    crossSitePendingSelectionV1: '',
+    observedListingsV1: { version: 1, items: [] }
+  }, result => resolve({
+    pending: result.crossSitePendingSelectionV1,
+    observedCount: result.observedListingsV1.items.length
+  }))));
+  assert.equal(pendingState.pending, '');
+  assert.equal(pendingState.observedCount, 4);
+  assert.doesNotMatch(
+    await page.locator('#side-status').innerText(),
+    /保存期間の終了などで見つかりませんでした/
+  );
+  await page.close();
+}
+
 async function testDetailObservationIsStable(context, extensionId) {
   const fixtureCase = {
     site: 'SUUMO',
@@ -787,6 +910,7 @@ async function main() {
     await testAthomeDetailPage(context);
     await testHomesDetailPage(context);
     await testCrossSiteContentBadge(context, extensionId);
+    await testCrossSiteSidePanel(context, extensionId);
     await testObservedExtractionMatrix(context, extensionId);
     await testDetailObservationIsStable(context, extensionId);
     await testPopup(context, extensionId);

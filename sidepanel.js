@@ -15,6 +15,10 @@ let sideChecklistSaveTimer = null;
 let sideRecheckInProgress = false;
 let sideSimilarAiSummary = null;
 let sideSimilarAiInProgress = false;
+let sideObservedListings = [];
+let sideMatchOverrides = { version: 1, buildingPairs: [], unitPairs: [] };
+let sideBuildingAliases = { version: 1, entries: [] };
+let selectedCrossSiteListingKey = '';
 
 const SIDE_DEFAULT_LOAN_SETTINGS = {
   annualRatePercent: 0.8,
@@ -50,17 +54,37 @@ function normalizeSideLoanSettings(settings = {}) {
 }
 
 function loadSidePanelData() {
-  chrome.storage.local.get({
-    favorites: [],
-    loanSettings: SIDE_DEFAULT_LOAN_SETTINGS
-  }, (result) => {
-    sideFavorites = Array.isArray(result.favorites) ? result.favorites : [];
-    sideLoanSettings = normalizeSideLoanSettings(result.loanSettings);
-    if (!selectedFavoriteUrl && sideFavorites[0]) {
-      selectedFavoriteUrl = sideFavorites[0].url;
-    }
-    renderSidePanel();
+  return new Promise((resolve) => {
+    chrome.storage.local.get({
+      favorites: [],
+      loanSettings: SIDE_DEFAULT_LOAN_SETTINGS,
+      observedListingsV1: { version: 1, items: [] },
+      listingMatchOverridesV1: { version: 1, buildingPairs: [], unitPairs: [] },
+      buildingAliasesV1: { version: 1, entries: [] },
+      crossSitePendingSelectionV1: ''
+    }, (result) => {
+      sideFavorites = Array.isArray(result.favorites) ? result.favorites : [];
+      sideLoanSettings = normalizeSideLoanSettings(result.loanSettings);
+      sideObservedListings = Array.isArray(result.observedListingsV1?.items) ? result.observedListingsV1.items : [];
+      sideMatchOverrides = result.listingMatchOverridesV1 || { version: 1, buildingPairs: [], unitPairs: [] };
+      sideBuildingAliases = result.buildingAliasesV1 || { version: 1, entries: [] };
+      selectedCrossSiteListingKey = result.crossSitePendingSelectionV1 || '';
+      if (selectedCrossSiteListingKey) chrome.storage.local.set({ crossSitePendingSelectionV1: '' });
+      if (!selectedFavoriteUrl && sideFavorites[0]) {
+        selectedFavoriteUrl = sideFavorites[0].url;
+      }
+      renderSidePanel();
+      resolve();
+    });
   });
+}
+
+function getSideCrossSiteIndex() {
+  return FudosanPropertyMatcher.buildListingIndex(
+    sideObservedListings,
+    sideMatchOverrides,
+    sideBuildingAliases
+  );
 }
 
 function getSearchText() {
@@ -151,7 +175,7 @@ function renderActiveSideView(favorites) {
   });
 
   renderCandidateList(favorites);
-  renderSimilarGroups(favorites);
+  renderCrossSiteGroupsSafely();
   renderCompareBoard(favorites);
   renderChecklistView(favorites);
   renderWatchView(favorites);
@@ -294,213 +318,244 @@ function renderCompareBoard(favorites) {
   boardEl.appendChild(table);
 }
 
-function renderSimilarGroups(favorites) {
-  const groupsEl = document.getElementById('side-similar-groups');
-  const statusEl = document.getElementById('side-similar-status');
-  const button = document.getElementById('side-similar-ai');
-  if (!groupsEl || !statusEl || !button) return;
+const CROSS_SITE_FIELD_LABELS = {
+  priceMan: '価格',
+  areaSqm: '面積',
+  layout: '間取り',
+  floor: '階数',
+  managementFeeYen: '管理費',
+  repairFundYen: '修繕積立金'
+};
 
-  const groups = buildSimilarFavoriteGroups(favorites);
-  groupsEl.innerHTML = '';
-  button.disabled = groups.length === 0 || sideSimilarAiInProgress || !getSideLanguageModelApi()?.create;
-  button.textContent = sideSimilarAiInProgress ? '生成中...' : 'AI短評';
+function renderCrossSiteListingRow(listing, unitDiff, listingCount) {
+  const row = document.createElement('article');
+  row.className = 'cross-site-listing-row';
+  row.dataset.listingKey = listing.listingKey;
 
-  if (groups.length === 0) {
-    statusEl.textContent = favorites.length < 2 ? '候補が2件以上になると類似まとめを表示します。' : '強く似ている候補はまだ見つかりません。';
-    statusEl.dataset.tone = '';
+  const heading = document.createElement('div');
+  heading.className = 'cross-site-listing-heading';
+  const site = document.createElement('span');
+  site.className = `cross-site-site cross-site-site--${listing.site}`;
+  site.textContent = getSiteDisplayName(listing.site);
+  const price = document.createElement('strong');
+  price.textContent = formatSidePrice(listing.priceMan);
+  heading.append(site, price);
+
+  if (listingCount > 1 && unitDiff.minPriceMan !== null && listing.priceMan === unitDiff.minPriceMan) {
+    const best = document.createElement('em');
+    best.className = 'cross-site-best';
+    best.textContent = '最安';
+    heading.appendChild(best);
+  }
+
+  const priceDifference = unitDiff.priceDiffByKey[listing.listingKey];
+  if (Number(priceDifference) > 0) {
+    const diff = document.createElement('span');
+    diff.className = 'cross-site-price-diff';
+    diff.textContent = `最安より${Number(priceDifference).toLocaleString()}万円差`;
+    heading.appendChild(diff);
+  }
+
+  const meta = document.createElement('p');
+  meta.className = 'cross-site-listing-meta';
+  const statusLabels = {
+    active: '掲載中',
+    ended: '掲載終了の可能性',
+    possibly_ended: '掲載終了の可能性',
+    check_failed: '確認失敗'
+  };
+  meta.textContent = [
+    listing.managementFeeYen ? `管理費 ${formatSideYen(listing.managementFeeYen)}` : '',
+    listing.repairFundYen ? `修繕 ${formatSideYen(listing.repairFundYen)}` : '',
+    listing.brokerageName || '',
+    statusLabels[listing.listingStatus] || '',
+    formatSideDateTime(listing.lastSeenAt)
+  ].filter(Boolean).join(' / ');
+
+  const open = document.createElement('button');
+  open.type = 'button';
+  open.className = 'cross-site-open-listing';
+  open.textContent = '掲載ページを開く';
+  open.addEventListener('click', () => chrome.tabs.create({ url: listing.url }));
+  row.append(heading, meta, open);
+  return row;
+}
+
+function createDecisionClearButton(pair, scope) {
+  const button = document.createElement('button');
+  button.type = 'button';
+  button.className = 'cross-site-decision-clear';
+  button.textContent = '判定を解除';
+  button.addEventListener('click', () => {
+    saveCrossSiteDecision({ leftKey: pair.leftKey, rightKey: pair.rightKey }, scope, 'clear')
+      .catch(error => setSideStatus(error.message));
+  });
+  return button;
+}
+
+async function saveCrossSiteDecision(candidate, scope, decision) {
+  const response = await chrome.runtime.sendMessage({
+    type: 'CROSS_SITE_SAVE_DECISION',
+    action: {
+      scope,
+      decision,
+      leftKey: candidate.leftKey,
+      rightKey: candidate.rightKey
+    }
+  });
+  if (!response?.ok) throw new Error(response?.error || '判定を保存できませんでした');
+  await loadSidePanelData();
+  setSideStatus('横断照合の判定を保存しました');
+}
+
+function focusSelectedCrossSiteListing() {
+  if (!selectedCrossSiteListingKey) return;
+  const row = document.querySelector(`[data-listing-key="${CSS.escape(selectedCrossSiteListingKey)}"]`);
+  const candidate = row ? null : Array.from(
+    document.querySelectorAll('.cross-site-candidate[data-cross-site-member-keys]')
+  ).find((card) => {
+    try {
+      return JSON.parse(card.dataset.crossSiteMemberKeys || '[]').includes(selectedCrossSiteListingKey);
+    } catch (error) {
+      return false;
+    }
+  });
+  const target = row || candidate;
+  if (!target) {
+    setSideStatus('指定された閲覧物件は保存期間の終了などで見つかりませんでした');
     return;
   }
+  target.classList.add(row ? 'cross-site-listing-row--selected' : 'cross-site-candidate--selected');
+  target.scrollIntoView({ block: 'center' });
+}
 
-  if (!getSideLanguageModelApi()?.create) {
-    statusEl.textContent = '類似グループを表示中。AI短評はこのChromeでは未対応です。';
-    statusEl.dataset.tone = 'warn';
-  } else if (sideSimilarAiSummary) {
-    statusEl.textContent = 'AI短評を表示中です。';
-    statusEl.dataset.tone = 'success';
-  } else {
-    statusEl.textContent = '類似グループを表示中。AI短評も生成できます。';
-    statusEl.dataset.tone = '';
-  }
+function renderCrossSiteGroups(index) {
+  const groupsEl = document.getElementById('side-similar-groups');
+  const statusEl = document.getElementById('side-similar-status');
+  const aiButton = document.getElementById('side-similar-ai');
+  if (!groupsEl || !statusEl || !aiButton) return;
 
-  groups.forEach((group, index) => {
+  const visibleGroups = index.groups.filter(group => (
+    group.unitGroups.reduce((count, unit) => count + unit.listings.length, 0) >= 2
+  ));
+  groupsEl.replaceChildren();
+  aiButton.disabled = visibleGroups.length === 0 || sideSimilarAiInProgress || !getSideLanguageModelApi()?.create;
+  aiButton.textContent = sideSimilarAiInProgress ? '生成中...' : 'AI短評';
+
+  visibleGroups.forEach((group, groupIndex) => {
     const card = document.createElement('article');
-    card.className = 'side-similar-card';
+    card.className = 'cross-site-building-card';
+    card.dataset.groupId = group.groupId;
 
     const title = document.createElement('div');
-    title.className = 'side-similar-title';
-    title.textContent = group.title;
+    title.className = 'cross-site-building-title';
+    title.textContent = group.displayName;
     card.appendChild(title);
 
-    const reason = document.createElement('div');
-    reason.className = 'side-similar-reason';
-    reason.textContent = group.reasons.join(' / ');
-    card.appendChild(reason);
+    group.unitGroups.forEach((unit) => {
+      const unitCard = document.createElement('section');
+      unitCard.className = 'cross-site-unit-card';
+      const representative = unit.listings[0];
+      const unitTitle = document.createElement('div');
+      unitTitle.className = 'cross-site-unit-title';
+      unitTitle.textContent = [
+        representative.floor ? `${representative.floor}階` : '',
+        representative.areaSqm ? `${representative.areaSqm}㎡` : '',
+        representative.layout || ''
+      ].filter(Boolean).join(' / ') || '住戸情報未取得';
+      unitCard.appendChild(unitTitle);
 
-    const items = document.createElement('div');
-    items.className = 'side-similar-items';
-    group.favorites.forEach((fav) => {
-      const buttonEl = document.createElement('button');
-      buttonEl.className = 'side-similar-item';
-      buttonEl.type = 'button';
-      buttonEl.addEventListener('click', () => {
-        selectedFavoriteUrl = fav.url;
-        renderSidePanel();
+      unit.diff.fieldsWithDifferences.forEach((field) => {
+        const chip = document.createElement('span');
+        chip.className = 'cross-site-difference-chip';
+        chip.textContent = `${CROSS_SITE_FIELD_LABELS[field]}に記載差あり`;
+        unitCard.appendChild(chip);
       });
-
-      const name = document.createElement('strong');
-      name.textContent = fav.name || '(物件名不明)';
-      buttonEl.appendChild(name);
-
-      const meta = document.createElement('span');
-      meta.textContent = [
-        formatSidePrice(fav.currentPrice || fav.price),
-        fav.area ? `${fav.area}m²` : '',
-        fav.tsubotanka ? `坪${fav.tsubotanka.toLocaleString()}万` : '',
-        fav.station || ''
-      ].filter(Boolean).join(' / ');
-      buttonEl.appendChild(meta);
-      items.appendChild(buttonEl);
+      unit.listings.forEach(listing => (
+        unitCard.appendChild(renderCrossSiteListingRow(listing, unit.diff, unit.listings.length))
+      ));
+      card.appendChild(unitCard);
     });
-    card.appendChild(items);
 
-    const aiComment = sideSimilarAiSummary?.summaries?.[index]?.comment;
+    const aiComment = sideSimilarAiSummary?.summaries?.[groupIndex]?.comment;
     if (aiComment) {
       const comment = document.createElement('div');
       comment.className = 'side-similar-ai-comment';
       comment.textContent = aiComment;
       card.appendChild(comment);
     }
-
     groupsEl.appendChild(card);
   });
-}
 
-function normalizeSimilarText(value) {
-  return String(value || '')
-    .toLowerCase()
-    .replace(/[Ａ-Ｚａ-ｚ０-９]/g, char => String.fromCharCode(char.charCodeAt(0) - 0xFEE0))
-    .replace(/中古マンション|マンション|売主|専任|一般|階|号室|室|棟/g, '')
-    .replace(/[()\[\]（）【】「」『』,\s　・･\-＿_]/g, '');
-}
-
-function getNameTokens(fav) {
-  const text = normalizeSimilarText(fav.name || '');
-  if (!text) return [];
-  const tokens = [];
-  for (let length = Math.min(8, text.length); length >= 3; length--) {
-    for (let i = 0; i <= text.length - length; i++) {
-      tokens.push(text.slice(i, i + length));
-    }
-  }
-  return Array.from(new Set(tokens)).slice(0, 80);
-}
-
-function getFavoriteSimilarity(a, b) {
-  const reasons = [];
-  let score = 0;
-  const aName = normalizeSimilarText(a.name || '');
-  const bName = normalizeSimilarText(b.name || '');
-  const stationA = normalizeSimilarText(a.station || '');
-  const stationB = normalizeSimilarText(b.station || '');
-
-  if (aName && bName && (aName.includes(bName) || bName.includes(aName))) {
-    score += 3.2;
-    reasons.push('物件名が近い');
-  } else {
-    const aTokens = getNameTokens(a);
-    const bTokenSet = new Set(getNameTokens(b));
-    const overlap = aTokens.filter(token => bTokenSet.has(token)).length;
-    if (overlap >= 2) {
-      score += Math.min(2.4, overlap * 0.55);
-      reasons.push('名称の共通部分あり');
-    }
-  }
-
-  if (stationA && stationB && stationA === stationB) {
-    score += 1.1;
-    reasons.push('駅距離表記が同じ');
-  }
-
-  const areaDiff = Math.abs(Number(a.area || 0) - Number(b.area || 0));
-  if (areaDiff > 0 && areaDiff <= 3) {
-    score += 1.2;
-    reasons.push('面積が近い');
-  } else if (areaDiff > 0 && areaDiff <= 8) {
-    score += 0.6;
-    reasons.push('面積帯が近い');
-  }
-
-  const priceDiff = Math.abs(Number(a.currentPrice || a.price || 0) - Number(b.currentPrice || b.price || 0));
-  if (priceDiff > 0 && priceDiff <= 500) {
-    score += 0.9;
-    reasons.push('価格が近い');
-  } else if (priceDiff > 0 && priceDiff <= 1500) {
-    score += 0.45;
-    reasons.push('価格帯が近い');
-  }
-
-  const tsuboDiff = Math.abs(Number(a.tsubotanka || 0) - Number(b.tsubotanka || 0));
-  if (tsuboDiff > 0 && tsuboDiff <= 20) {
-    score += 0.8;
-    reasons.push('坪単価が近い');
-  }
-
-  return { score, reasons: Array.from(new Set(reasons)) };
-}
-
-function buildSimilarFavoriteGroups(favorites) {
-  const candidates = favorites.filter(fav => fav.url && (fav.name || fav.station || fav.area || fav.price));
-  const parent = new Map(candidates.map(fav => [fav.url, fav.url]));
-  const pairReasons = new Map();
-
-  const find = (url) => {
-    const current = parent.get(url);
-    if (current === url) return url;
-    const root = find(current);
-    parent.set(url, root);
-    return root;
-  };
-  const unite = (a, b) => {
-    const rootA = find(a);
-    const rootB = find(b);
-    if (rootA !== rootB) parent.set(rootB, rootA);
-  };
-
-  for (let i = 0; i < candidates.length; i++) {
-    for (let j = i + 1; j < candidates.length; j++) {
-      const similarity = getFavoriteSimilarity(candidates[i], candidates[j]);
-      if (similarity.score >= 3) {
-        unite(candidates[i].url, candidates[j].url);
-        pairReasons.set(`${candidates[i].url}|${candidates[j].url}`, similarity.reasons);
-      }
-    }
-  }
-
-  const grouped = new Map();
-  candidates.forEach((fav) => {
-    const root = find(fav.url);
-    if (!grouped.has(root)) grouped.set(root, []);
-    grouped.get(root).push(fav);
+  index.candidates.forEach((candidate) => {
+    const left = index.byKey.get(candidate.leftKey);
+    const right = index.byKey.get(candidate.rightKey);
+    if (!left || !right) return;
+    const candidateCard = document.createElement('article');
+    candidateCard.className = 'cross-site-candidate';
+    candidateCard.dataset.crossSiteMemberKeys = JSON.stringify(Array.from(new Set([
+      candidate.leftKey,
+      candidate.rightKey,
+      ...(candidate.leftMemberKeys || []),
+      ...(candidate.rightMemberKeys || [])
+    ])).sort());
+    const summary = document.createElement('strong');
+    summary.textContent = `同一候補: ${left.rawName || left.site} / ${right.rawName || right.site}`;
+    const reasons = document.createElement('p');
+    reasons.textContent = candidate.reasons.join(' / ');
+    const actions = document.createElement('div');
+    actions.className = 'cross-site-decision-actions';
+    const choices = candidate.scope === 'unit'
+      ? [['同じ住戸', 'same'], ['別の物件', 'different']]
+      : [['同じマンション', 'same'], ['別の物件', 'different']];
+    choices.forEach(([label, decision]) => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.textContent = label;
+      button.addEventListener('click', () => {
+        saveCrossSiteDecision(candidate, candidate.scope, decision)
+          .catch(error => setSideStatus(error.message));
+      });
+      actions.appendChild(button);
+    });
+    candidateCard.append(summary, reasons, actions);
+    groupsEl.appendChild(candidateCard);
   });
 
-  return Array.from(grouped.values())
-    .filter(group => group.length >= 2)
-    .map((group) => {
-      const reasons = new Set();
-      for (let i = 0; i < group.length; i++) {
-        for (let j = i + 1; j < group.length; j++) {
-          (pairReasons.get(`${group[i].url}|${group[j].url}`) || pairReasons.get(`${group[j].url}|${group[i].url}`) || [])
-            .forEach(reason => reasons.add(reason));
-        }
-      }
-      const titleBase = group[0].name ? compactSideText(group[0].name, 18) : '近い条件';
-      return {
-        title: `${titleBase} ほか${group.length}件`,
-        reasons: Array.from(reasons).slice(0, 4),
-        favorites: group.sort((a, b) => Number(a.currentPrice || a.price || 0) - Number(b.currentPrice || b.price || 0))
-      };
-    })
-    .slice(0, 4);
+  const manualPairs = [
+    ...(Array.isArray(sideMatchOverrides?.buildingPairs) ? sideMatchOverrides.buildingPairs : [])
+      .map(pair => ({ ...pair, scope: 'building' })),
+    ...(Array.isArray(sideMatchOverrides?.unitPairs) ? sideMatchOverrides.unitPairs : [])
+      .map(pair => ({ ...pair, scope: 'unit' }))
+  ].filter(pair => ['same', 'different'].includes(pair.decision));
+
+  manualPairs.forEach((pair) => {
+    const left = index.byKey.get(pair.leftKey);
+    const right = index.byKey.get(pair.rightKey);
+    if (!left || !right) return;
+    const decisionCard = document.createElement('article');
+    decisionCard.className = 'cross-site-candidate cross-site-manual-decision';
+    const label = document.createElement('strong');
+    const subject = pair.scope === 'unit' ? '住戸' : 'マンション';
+    label.textContent = `${left.rawName || left.site} / ${right.rawName || right.site}: ${pair.decision === 'same' ? `同じ${subject}` : `別の${subject}`}として確認済み`;
+    decisionCard.append(label, createDecisionClearButton(pair, pair.scope));
+    groupsEl.appendChild(decisionCard);
+  });
+
+  statusEl.textContent = visibleGroups.length || index.candidates.length || manualPairs.length
+    ? '閲覧履歴内の横断照合結果です。'
+    : '別サイトで同じ可能性がある閲覧物件はまだありません。';
+  window.requestAnimationFrame(focusSelectedCrossSiteListing);
+}
+
+function renderCrossSiteGroupsSafely() {
+  try {
+    renderCrossSiteGroups(getSideCrossSiteIndex());
+  } catch (error) {
+    console.error('[坪たん Side Panel] 横断照合の描画に失敗:', error);
+    const statusEl = document.getElementById('side-similar-status');
+    if (statusEl) statusEl.textContent = '横断照合を表示できませんでした。ほかの比較機能は引き続き利用できます。';
+  }
 }
 
 function getSideLanguageModelApi() {
@@ -515,24 +570,28 @@ function getSideLanguageModelApi() {
   return null;
 }
 
+function getCrossSiteAiGroups() {
+  return getSideCrossSiteIndex().groups.filter(group => (
+    group.unitGroups.reduce((count, unit) => count + unit.listings.length, 0) >= 2
+  ));
+}
+
 function buildSideSimilarPrompt(groups) {
   const lines = groups.map((group, index) => {
-    const items = group.favorites.map((fav) => [
-      fav.name || '(物件名不明)',
-      formatSidePrice(fav.currentPrice || fav.price),
-      fav.area ? `${fav.area}m²` : '',
-      fav.tsubotanka ? `坪${fav.tsubotanka}万円` : '',
-      fav.station || '',
-      fav.repairFundRisk?.label ? `修繕${fav.repairFundRisk.label}` : ''
+    const listings = group.unitGroups.flatMap(unit => unit.listings).map(listing => [
+      getSiteDisplayName(listing.site),
+      formatSidePrice(listing.priceMan),
+      listing.areaSqm ? `${listing.areaSqm}㎡` : '',
+      listing.floor ? `${listing.floor}階` : '',
+      listing.layout || ''
     ].filter(Boolean).join(' / '));
-    return `グループ${index + 1}: ${group.reasons.join('・')}\n${items.map(item => `- ${item}`).join('\n')}`;
+    return `マンション${index + 1}: ${group.displayName}\n${listings.map(item => `- ${item}`).join('\n')}`;
   }).join('\n\n');
-
   return [
-    'あなたは中古マンション候補の比較メモを作るアシスタントです。',
-    '以下の類似候補グループについて、何が近く、どこを比べるべきかを短くまとめてください。',
-    '購入すべき/買わないべき等の結論、価格査定、根拠のない推測は書かないでください。',
-    '各グループ1文、45〜80文字程度。返答はJSONだけにしてください。',
+    'あなたは中古マンションのサイト別掲載差を整理するアシスタントです。',
+    '閲覧履歴内の事実だけを使い、各マンションで確認すべき掲載差を1文でまとめてください。',
+    '購入結論、価格査定、投資判断、与えられていない事実の推測は禁止です。',
+    '各文45〜80文字。JSONだけを返してください。',
     '形式: {"summaries":[{"comment":"..."}]}',
     '',
     lines
@@ -544,8 +603,7 @@ function normalizeSideSimilarSummary(rawSummary, groups) {
   return {
     summaries: groups.map((group, index) => ({
       comment: compactSideText(
-        summaries[index]?.comment ||
-        `${group.reasons.join('・')}が近い候補です。価格、面積、管理費、修繕積立金を横並びで確認してください。`,
+        summaries[index]?.comment || `${group.displayName}の価格、面積、管理費、修繕積立金の記載差を確認してください。`,
         110
       )
     }))
@@ -558,25 +616,16 @@ function parseSideSimilarSummary(responseText, groups) {
   }
 
   const cleaned = String(responseText || '').trim().replace(/^```(?:json)?/i, '').replace(/```$/i, '').trim();
-  const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-  if (jsonMatch) {
-    try {
-      return normalizeSideSimilarSummary(JSON.parse(jsonMatch[0]), groups);
-    } catch (error) {
-      console.error('[坪たん Side Panel] 類似AI短評のJSON解析に失敗:', error);
-    }
+  try {
+    return normalizeSideSimilarSummary(JSON.parse(cleaned), groups);
+  } catch (error) {
+    const summaries = cleaned.split(/\n/).filter(Boolean).map(comment => ({ comment }));
+    return normalizeSideSimilarSummary({ summaries }, groups);
   }
-
-  const lines = cleaned.split(/\n/).filter(Boolean);
-  return {
-    summaries: groups.map((group, index) => ({
-      comment: compactSideText(lines[index] || `${group.reasons.join('・')}が近い候補です。比較表で差分を確認してください。`, 110)
-    }))
-  };
 }
 
 async function generateSideSimilarAiSummary() {
-  const groups = buildSimilarFavoriteGroups(getSortedSideFavorites());
+  const groups = getCrossSiteAiGroups();
   if (groups.length === 0 || sideSimilarAiInProgress) return;
 
   const api = getSideLanguageModelApi();
@@ -586,7 +635,7 @@ async function generateSideSimilarAiSummary() {
   }
 
   sideSimilarAiInProgress = true;
-  renderSimilarGroups(getSortedSideFavorites());
+  renderCrossSiteGroupsSafely();
 
   let session = null;
   try {
@@ -607,9 +656,7 @@ async function generateSideSimilarAiSummary() {
               type: 'array',
               items: {
                 type: 'object',
-                properties: {
-                  comment: { type: 'string' }
-                },
+                properties: { comment: { type: 'string' } },
                 required: ['comment'],
                 additionalProperties: false
               }
@@ -622,18 +669,18 @@ async function generateSideSimilarAiSummary() {
       });
     } catch (error) {
       console.error('[坪たん Side Panel] 構造化AI短評に失敗。通常プロンプトで再試行:', error);
-      response = await session.prompt(`${prompt}\n\nJSON以外の文章は書かず、必ず {"summaries":[{"comment":"..."}]} の形で返してください。`);
+      response = await session.prompt(`${prompt}\n\nJSON以外を書かず、必ず {"summaries":[{"comment":"..."}]} の形で返してください。`);
     }
 
     sideSimilarAiSummary = parseSideSimilarSummary(response, groups);
-    setSideStatus('類似候補のAI短評を生成しました');
+    setSideStatus('横断掲載のAI短評を生成しました');
   } catch (error) {
-    console.error('[坪たん Side Panel] 類似AI短評生成エラー:', error);
+    console.error('[坪たん Side Panel] 横断掲載AI短評生成エラー:', error);
     setSideStatus(error.message || 'AI短評を生成できませんでした');
   } finally {
     if (session?.destroy) session.destroy();
     sideSimilarAiInProgress = false;
-    renderSimilarGroups(getSortedSideFavorites());
+    renderCrossSiteGroupsSafely();
   }
 }
 
@@ -1231,7 +1278,22 @@ function setupSidePanelEvents() {
     if (areaName !== 'local') return;
     if (changes.favorites) sideFavorites = changes.favorites.newValue || [];
     if (changes.loanSettings) sideLoanSettings = normalizeSideLoanSettings(changes.loanSettings.newValue);
-    if (changes.favorites || changes.loanSettings) sideSimilarAiSummary = null;
+    if (changes.observedListingsV1) sideObservedListings = changes.observedListingsV1.newValue?.items || [];
+    if (changes.listingMatchOverridesV1) {
+      sideMatchOverrides = changes.listingMatchOverridesV1.newValue || { version: 1, buildingPairs: [], unitPairs: [] };
+    }
+    if (changes.buildingAliasesV1) {
+      sideBuildingAliases = changes.buildingAliasesV1.newValue || { version: 1, entries: [] };
+    }
+    if (
+      changes.favorites ||
+      changes.loanSettings ||
+      changes.observedListingsV1 ||
+      changes.listingMatchOverridesV1 ||
+      changes.buildingAliasesV1
+    ) {
+      sideSimilarAiSummary = null;
+    }
     renderSidePanel();
   });
 }
