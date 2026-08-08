@@ -38,7 +38,15 @@
       if (favoriteUrls.has(item.url)) favoritesKept.push(item);
       else if (Date.parse(item.lastSeenAt || 0) >= cutoffMs) nonFavorites.push(item);
     });
-    nonFavorites.sort((left, right) => Date.parse(right.lastSeenAt || 0) - Date.parse(left.lastSeenAt || 0));
+    nonFavorites.sort((left, right) => {
+      const lastSeenDifference = Date.parse(right.lastSeenAt || 0) - Date.parse(left.lastSeenAt || 0);
+      if (lastSeenDifference !== 0) return lastSeenDifference;
+      const leftKey = String(left.listingKey || '');
+      const rightKey = String(right.listingKey || '');
+      if (leftKey < rightKey) return -1;
+      if (leftKey > rightKey) return 1;
+      return 0;
+    });
     return { version: 1, items: [...favoritesKept, ...nonFavorites.slice(0, maxNonFavorites)] };
   }
 

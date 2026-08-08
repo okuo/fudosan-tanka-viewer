@@ -60,6 +60,21 @@ assert.equal(store.upsertObservedListings(
   { retentionDays: 90, maxNonFavorites: 500 }
 ).items.length, 500);
 
+const equalTimestampItems = Array.from({ length: 501 }, (_, index) => ({
+  listingKey: `SUUMO:${String(index).padStart(3, '0')}`,
+  url: `https://suumo.jp/equal-${index}`,
+  lastSeenAt: NOW
+}));
+const retainedForward = store.upsertObservedListings(
+  { version: 1, items: equalTimestampItems }, [], [], NOW,
+  { retentionDays: 90, maxNonFavorites: 500 }
+).items.map(item => item.listingKey).sort();
+const retainedReversed = store.upsertObservedListings(
+  { version: 1, items: [...equalTimestampItems].reverse() }, [], [], NOW,
+  { retentionDays: 90, maxNonFavorites: 500 }
+).items.map(item => item.listingKey).sort();
+assert.deepEqual(retainedReversed, retainedForward);
+
 const decisionState = store.applyMatchDecision({
   overrides: { version: 1, buildingPairs: [], unitPairs: [] },
   aliases: { version: 1, entries: [] }

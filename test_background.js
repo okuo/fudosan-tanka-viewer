@@ -176,4 +176,66 @@ async function testCrossSiteController() {
   assert.equal(memory.crossSiteMigrationsV1.favoriteBackfillCompleted, true);
 }
 
-testCrossSiteController().then(() => console.log('cross-site controller tests passed'));
+async function testCrossSiteMessageListener() {
+  let registeredListener = null;
+  const previousChrome = global.chrome;
+  global.chrome = {
+    runtime: {
+      lastError: null,
+      getManifest: () => ({}),
+      onInstalled: { addListener: () => undefined },
+      onStartup: { addListener: () => undefined },
+      onMessage: { addListener: listener => { registeredListener = listener; } }
+    },
+    storage: {
+      local: {
+        get: (defaults, callback) => callback({ ...defaults }),
+        set: (_patch, callback) => callback()
+      }
+    },
+    sidePanel: { open: async () => undefined },
+    alarms: {
+      create: () => undefined,
+      onAlarm: { addListener: () => undefined }
+    },
+    notifications: {
+      onClicked: { addListener: () => undefined }
+    }
+  };
+
+  const backgroundPath = require.resolve('./background.js');
+  delete require.cache[backgroundPath];
+  try {
+    require('./background.js');
+    assert.equal(typeof registeredListener, 'function');
+
+    const responses = [];
+    let nullResult;
+    assert.doesNotThrow(() => {
+      nullResult = registeredListener(null, {}, response => responses.push(response));
+    });
+    assert.equal(nullResult, false);
+
+    const unrelatedResult = registeredListener(
+      { type: 'UNRELATED_MESSAGE' },
+      {},
+      response => responses.push(response)
+    );
+    assert.equal(unrelatedResult, false);
+    assert.deepEqual(responses, []);
+    await new Promise(resolve => setImmediate(resolve));
+  } finally {
+    delete require.cache[backgroundPath];
+    if (previousChrome === undefined) delete global.chrome;
+    else global.chrome = previousChrome;
+  }
+}
+
+async function run() {
+  await testCrossSiteController();
+  console.log('cross-site controller tests passed');
+  await testCrossSiteMessageListener();
+  console.log('cross-site message listener tests passed');
+}
+
+run();

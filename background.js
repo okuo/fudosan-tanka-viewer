@@ -722,7 +722,7 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onInstalled) {
       }
     };
 
-    if (crossSiteHandlers[message.type]) {
+    if (crossSiteHandlers[message?.type]) {
       Promise.resolve()
         .then(() => crossSiteHandlers[message.type](message, sender))
         .then((result) => sendResponse(result?.ok === undefined ? { ok: true, ...result } : result))
