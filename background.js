@@ -2,6 +2,17 @@
  * お気に入り物件のバックグラウンド再チェック
  */
 
+if (typeof importScripts === 'function') {
+  importScripts('property-matcher.js', 'observed-listings-store.js');
+}
+
+const CrossSiteMatcher = globalThis.FudosanPropertyMatcher || (
+  typeof require === 'function' ? require('./property-matcher.js') : null
+);
+const CrossSiteStore = globalThis.FudosanObservedListingsStore || (
+  typeof require === 'function' ? require('./observed-listings-store.js') : null
+);
+
 const FAVORITE_RECHECK_ALARM = 'favorite-price-recheck';
 const FAVORITE_RECHECK_INTERVAL_MINUTES = 6 * 60;
 const FAVORITE_RECHECK_STALE_MS = 24 * 60 * 60 * 1000;
@@ -12,6 +23,175 @@ const RELEASE_NOTES_BADGE_VERSION_KEY = 'pendingReleaseNotesBadgeVersion';
 const RELEASE_NOTES_BADGE_TEXT = 'NEW';
 const LOCAL_BUILD_BADGE_TEXT = 'DEV';
 const PRICE_NOTIFICATION_TARGETS_KEY = 'priceChangeNotificationTargets';
+
+function createCrossSiteController({ get, set, openSidePanel, now }) {
+  let writeTail = Promise.resolve();
+  const enqueue = (work) => {
+    const result = writeTail.then(work, work);
+    writeTail = result.catch(() => undefined);
+    return result;
+  };
+
+  const defaults = {
+    observedListingsV1: CrossSiteStore.EMPTY_OBSERVED(),
+    listingMatchOverridesV1: CrossSiteStore.EMPTY_OVERRIDES(),
+    buildingAliasesV1: CrossSiteStore.EMPTY_ALIASES(),
+    crossSiteMatchingSettingsV1: { ...CrossSiteStore.DEFAULT_SETTINGS },
+    crossSiteMigrationsV1: { favoriteBackfillCompleted: false },
+    favorites: []
+  };
+
+  function isQuotaError(error) {
+    return /quota|QUOTA_BYTES/i.test(error?.message || '');
+  }
+
+  async function persistObserved(observed, overrides, favorites) {
+    try {
+      await set({ observedListingsV1: observed, listingMatchOverridesV1: overrides });
+      return observed;
+    } catch (error) {
+      if (!isQuotaError(error)) throw error;
+      const reduced = CrossSiteStore.upsertObservedListings(
+        observed,
+        [],
+        favorites,
+        now(),
+        { retentionDays: 90, maxNonFavorites: 250 }
+      );
+      const reducedOverrides = CrossSiteStore.pruneMatchMetadata(overrides, reduced.items);
+      await set({ observedListingsV1: reduced, listingMatchOverridesV1: reducedOverrides });
+      return reduced;
+    }
+  }
+
+  async function getState() {
+    const state = await get(defaults);
+    return {
+      observed: state.observedListingsV1,
+      overrides: state.listingMatchOverridesV1,
+      aliases: state.buildingAliasesV1,
+      settings: state.crossSiteMatchingSettingsV1
+    };
+  }
+
+  function favoriteToObservedRecord(favorite) {
+    return CrossSiteMatcher.prepareListingRecord({
+      site: favorite.site,
+      url: favorite.url,
+      sourceListingId: CrossSiteMatcher.extractSourceListingId(favorite.url, favorite.site),
+      pageType: favorite.pageType === 'detail' ? 'detail' : 'list',
+      observationSource: 'favorite-backfill',
+      rawName: favorite.name,
+      rawAddress: favorite.address || '',
+      priceMan: favorite.currentPrice || favorite.price,
+      areaSqm: favorite.area,
+      managementFeeYen: favorite.managementFee,
+      repairFundYen: favorite.repairFund,
+      listingStatus: favorite.listingStatus || 'active'
+    }, favorite.lastCheckedAt || favorite.addedAt || now());
+  }
+
+  async function backfillFavorites() {
+    return enqueue(async () => {
+      const state = await get(defaults);
+      if (state.crossSiteMatchingSettingsV1?.enabled === false) return { ok: true, disabled: true };
+      if (state.crossSiteMigrationsV1?.favoriteBackfillCompleted) return { ok: true, skipped: true };
+      const favoriteItems = (Array.isArray(state.favorites) ? state.favorites : [])
+        .map(favorite => ({ ...favorite, url: CrossSiteMatcher.normalizeUrl(favorite.url) }));
+      const records = favoriteItems
+        .filter(favorite => favorite?.site && favorite?.url)
+        .map(favoriteToObservedRecord);
+      const observed = CrossSiteStore.upsertObservedListings(
+        state.observedListingsV1,
+        records,
+        favoriteItems,
+        now(),
+        { retentionDays: 90, maxNonFavorites: 500 }
+      );
+      const overrides = CrossSiteStore.pruneMatchMetadata(state.listingMatchOverridesV1, observed.items);
+      await persistObserved(observed, overrides, favoriteItems);
+      await set({ crossSiteMigrationsV1: { favoriteBackfillCompleted: true } });
+      return { ok: true, count: records.length };
+    });
+  }
+
+  async function upsert(records) {
+    return enqueue(async () => {
+      const state = await get(defaults);
+      if (state.crossSiteMatchingSettingsV1?.enabled === false) return { ok: true, disabled: true, summaries: {} };
+      const favoriteItems = (Array.isArray(state.favorites) ? state.favorites : [])
+        .map(favorite => ({ ...favorite, url: CrossSiteMatcher.normalizeUrl(favorite.url) }));
+      const observed = CrossSiteStore.upsertObservedListings(
+        state.observedListingsV1,
+        records,
+        favoriteItems,
+        now(),
+        { retentionDays: 90, maxNonFavorites: 500 }
+      );
+      let overrides = CrossSiteStore.pruneMatchMetadata(state.listingMatchOverridesV1, observed.items);
+      const persisted = await persistObserved(observed, overrides, favoriteItems);
+      overrides = CrossSiteStore.pruneMatchMetadata(overrides, persisted.items);
+      const index = CrossSiteMatcher.buildListingIndex(persisted.items, overrides, state.buildingAliasesV1);
+      return { ok: true, disabled: false, summaries: CrossSiteMatcher.summarizeListingMatches(index) };
+    });
+  }
+
+  async function saveDecision(action) {
+    return enqueue(async () => {
+      const state = await get(defaults);
+      const next = CrossSiteStore.applyMatchDecision({
+        overrides: state.listingMatchOverridesV1,
+        aliases: state.buildingAliasesV1
+      }, Array.isArray(state.observedListingsV1?.items) ? state.observedListingsV1.items : [], action, now());
+      await set({ listingMatchOverridesV1: next.overrides, buildingAliasesV1: next.aliases });
+      return { ok: true };
+    });
+  }
+
+  async function clearData() {
+    return enqueue(async () => {
+      await set({
+        ...CrossSiteStore.clearCrossSiteData(),
+        crossSiteMigrationsV1: { favoriteBackfillCompleted: true }
+      });
+      return { ok: true };
+    });
+  }
+
+  async function saveSettings(settings) {
+    const result = await enqueue(async () => {
+      const next = { enabled: settings.enabled !== false, retentionDays: 90 };
+      await set({ crossSiteMatchingSettingsV1: next });
+      return { ok: true, settings: next };
+    });
+    if (result.settings.enabled) await backfillFavorites();
+    return result;
+  }
+
+  async function openListingGroup(listingKey, tabId) {
+    return enqueue(async () => {
+      await set({ crossSitePendingSelectionV1: listingKey });
+      await openSidePanel(tabId);
+      return { ok: true };
+    });
+  }
+
+  return { getState, backfillFavorites, upsert, saveDecision, clearData, saveSettings, openListingGroup };
+}
+
+function getLocalStorage(defaults) {
+  return new Promise(resolve => chrome.storage.local.get(defaults, resolve));
+}
+
+function setLocalStorage(patch) {
+  return new Promise((resolve, reject) => {
+    chrome.storage.local.set(patch, () => {
+      const error = chrome.runtime.lastError;
+      if (error) reject(new Error(error.message));
+      else resolve();
+    });
+  });
+}
 
 const LISTING_ENDED_PATTERNS = [
   /掲載(?:が)?終了/,
@@ -485,6 +665,17 @@ function ensureFavoriteRecheckAlarm() {
 }
 
 if (typeof chrome !== 'undefined' && chrome.runtime?.onInstalled) {
+  const crossSiteController = createCrossSiteController({
+    get: getLocalStorage,
+    set: setLocalStorage,
+    openSidePanel: tabId => chrome.sidePanel.open({ tabId }),
+    now: () => new Date().toISOString()
+  });
+
+  crossSiteController.backfillFavorites().catch((error) => {
+    console.error('[坪たん 横断照合] 既存のお気に入りを取り込めませんでした:', error);
+  });
+
   chrome.runtime.onInstalled.addListener((details) => {
     ensureFavoriteRecheckAlarm();
 
@@ -516,6 +707,26 @@ if (typeof chrome !== 'undefined' && chrome.runtime?.onInstalled) {
           sendResponse({ ok: false, error: error.message || '更新バッジのクリアに失敗しました' });
         });
 
+      return true;
+    }
+
+    const crossSiteHandlers = {
+      CROSS_SITE_GET_STATE: () => crossSiteController.getState(),
+      CROSS_SITE_UPSERT: message => crossSiteController.upsert(message.records || []),
+      CROSS_SITE_SAVE_DECISION: message => crossSiteController.saveDecision(message.action),
+      CROSS_SITE_CLEAR: () => crossSiteController.clearData(),
+      CROSS_SITE_SAVE_SETTINGS: message => crossSiteController.saveSettings(message.settings || {}),
+      CROSS_SITE_OPEN: (message, sender) => {
+        if (!Number.isInteger(sender.tab?.id)) throw new Error('Side Panelを開くタブを特定できませんでした');
+        return crossSiteController.openListingGroup(message.listingKey, sender.tab.id);
+      }
+    };
+
+    if (crossSiteHandlers[message.type]) {
+      Promise.resolve()
+        .then(() => crossSiteHandlers[message.type](message, sender))
+        .then((result) => sendResponse(result?.ok === undefined ? { ok: true, ...result } : result))
+        .catch(error => sendResponse({ ok: false, error: error.message || '横断照合の処理に失敗しました' }));
       return true;
     }
 
@@ -561,6 +772,7 @@ if (typeof module !== 'undefined') {
     shouldRecheckFavorite,
     getFavoriteRecheckTime,
     didFavoritePriceChange,
-    buildPriceChangeNotificationMessage
+    buildPriceChangeNotificationMessage,
+    createCrossSiteController
   };
 }

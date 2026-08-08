@@ -18,7 +18,7 @@
         "*://*.athome.co.jp/*",
         "*://*.homes.co.jp/*"
       ],
-      "js": ["content.js"],
+      "js": ["property-matcher.js", "content.js"],
       "css": ["styles.css"],
       "run_at": "document_end"
     }
