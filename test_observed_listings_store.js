@@ -132,3 +132,25 @@ assert.deepEqual(cleared, {
   buildingAliasesV1: { version: 1, entries: [] },
   crossSitePendingSelectionV1: ''
 });
+
+const oneHundredDaysAgo = new Date(Date.parse(NOW) - 100 * 24 * 60 * 60 * 1000).toISOString();
+const favoriteAtCutoff = {
+  listingKey: 'SUUMO:old-favorite', url: 'https://suumo.jp/old-favorite', lastSeenAt: oneHundredDaysAgo
+};
+const ordinaryAtCutoff = {
+  listingKey: 'SUUMO:old-ordinary', url: 'https://suumo.jp/old-ordinary', lastSeenAt: oneHundredDaysAgo
+};
+const favoriteRetentionRegression = store.upsertObservedListings(
+  { version: 1, items: [favoriteAtCutoff, ordinaryAtCutoff] },
+  [],
+  [{ url: favoriteAtCutoff.url }],
+  NOW,
+  { retentionDays: 90, maxNonFavorites: 500 }
+);
+assert.deepEqual(favoriteRetentionRegression.items.map(item => item.listingKey), ['SUUMO:old-favorite']);
+assert.doesNotThrow(() => store.applyMatchDecision({
+  overrides: { version: 1, buildingPairs: {}, unitPairs: null },
+  aliases: { version: 1, entries: {} }
+}, [], {
+  scope: 'building', decision: 'clear', leftKey: 'SUUMO:missing', rightKey: 'HOMES:missing'
+}, NOW));

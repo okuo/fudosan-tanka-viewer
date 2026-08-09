@@ -417,3 +417,83 @@ assert.deepEqual(matcher.diffUnitListings([
     'ATHOME:priced': 0
   }
 });
+
+const sameNameTokyo = matcher.prepareListingRecord({
+  site: 'SUUMO', url: 'https://suumo.jp/regression-tokyo',
+  rawName: 'グランドレジデンス', rawAddress: '東京都港区芝1-2-3'
+}, '2026-07-19T00:10:00.000Z');
+const sameNameOsaka = matcher.prepareListingRecord({
+  site: 'HOMES', url: 'https://www.homes.co.jp/regression-osaka',
+  rawName: 'グランドレジデンス', rawAddress: '大阪府大阪市北区梅田1-2-3'
+}, '2026-07-19T00:10:01.000Z');
+assert.equal(matcher.scoreBuildingMatch(sameNameTokyo, sameNameOsaka, []).confidence, 'none');
+
+const firstWing = { ...left, listingKey: 'SUUMO:wing-1', buildingWing: '1棟', roomNumber: '1801' };
+const secondWing = { ...right, listingKey: 'HOMES:wing-2', buildingWing: '2棟', roomNumber: '1801' };
+assert.equal(matcher.scoreUnitMatch(firstWing, secondWing).confidence, 'none');
+const forcedSameWingIndex = matcher.buildListingIndex([firstWing, secondWing], {
+  version: 1,
+  buildingPairs: [],
+  unitPairs: [{
+    leftKey: matcher.pairKey(firstWing.listingKey, secondWing.listingKey).split('|')[0],
+    rightKey: matcher.pairKey(firstWing.listingKey, secondWing.listingKey).split('|')[1],
+    decision: 'same'
+  }]
+}, { version: 1, entries: [] });
+assert.equal(forcedSameWingIndex.groups[0].unitGroups.length, 1);
+
+const noAddressOne = matcher.prepareListingRecord({
+  site: 'SUUMO', url: 'https://suumo.jp/no-address-1', rawName: '同名レジデンス',
+  priceMan: 9000, areaSqm: 70
+}, '2026-07-19T00:11:00.000Z');
+const noAddressTwo = matcher.prepareListingRecord({
+  site: 'ATHOME', url: 'https://www.athome.co.jp/no-address-2', rawName: '同名レジデンス',
+  priceMan: 9000, areaSqm: 70
+}, '2026-07-19T00:11:01.000Z');
+assert.notEqual(matcher.scoreBuildingMatch(noAddressOne, noAddressTwo, []).confidence, 'high');
+
+const scopedAliases = {
+  version: 1,
+  entries: [{
+    addressBlockKey: '東京都中央区晴海2-3-30',
+    normalizedNames: ['アルファ棟', 'ベータ棟'],
+    confirmedAt: '2026-07-19T00:00:00.000Z'
+  }]
+};
+const toyosuAlpha = matcher.prepareListingRecord({
+  site: 'SUUMO', url: 'https://suumo.jp/toyosu-alpha',
+  rawName: 'アルファ棟', rawAddress: '東京都江東区豊洲2-3-30'
+}, '2026-07-19T00:12:00.000Z');
+const toyosuBeta = matcher.prepareListingRecord({
+  site: 'HOMES', url: 'https://www.homes.co.jp/toyosu-beta',
+  rawName: 'ベータ棟', rawAddress: '東京都江東区豊洲2-3-30'
+}, '2026-07-19T00:12:01.000Z');
+assert.equal(
+  matcher.scoreBuildingMatch(toyosuAlpha, toyosuBeta, scopedAliases.entries).reasons.includes('確認済み名称別名'),
+  false
+);
+
+const harumiAlpha = matcher.prepareListingRecord({
+  site: 'SUUMO', url: 'https://suumo.jp/harumi-alpha',
+  rawName: 'アルファ棟', rawAddress: '東京都中央区晴海2-3-30'
+}, '2026-07-19T00:13:00.000Z');
+const harumiBeta = matcher.prepareListingRecord({
+  site: 'HOMES', url: 'https://www.homes.co.jp/harumi-beta',
+  rawName: 'ベータ棟', rawAddress: '東京都中央区晴海2-3-30'
+}, '2026-07-19T00:13:01.000Z');
+assert.equal(matcher.scoreBuildingMatch(harumiAlpha, harumiBeta, scopedAliases.entries).confidence, 'high');
+const aliasForcedDifferent = matcher.buildListingIndex([harumiAlpha, harumiBeta], {
+  version: 1,
+  buildingPairs: [{
+    leftKey: matcher.pairKey(harumiAlpha.listingKey, harumiBeta.listingKey).split('|')[0],
+    rightKey: matcher.pairKey(harumiAlpha.listingKey, harumiBeta.listingKey).split('|')[1],
+    decision: 'different'
+  }],
+  unitPairs: []
+}, scopedAliases);
+assert.equal(aliasForcedDifferent.groups.length, 2);
+assert.doesNotThrow(() => matcher.buildListingIndex(
+  [sameNameTokyo, sameNameOsaka],
+  { version: 1, buildingPairs: {}, unitPairs: null },
+  { version: 1, entries: {} }
+));
