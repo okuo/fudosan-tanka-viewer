@@ -45,6 +45,39 @@ function createCrossSiteController({ get, set, openSidePanel, now }) {
     return /quota|QUOTA_BYTES/i.test(error?.message || '');
   }
 
+  function normalizedFavorites(favorites) {
+    return (Array.isArray(favorites) ? favorites : [])
+      .map(favorite => ({ ...favorite, url: CrossSiteMatcher.normalizeUrl(favorite.url) }));
+  }
+
+  function hasSameSerializedValue(left, right) {
+    return JSON.stringify(left) === JSON.stringify(right);
+  }
+
+  async function pruneStoredState(state, favoriteItems = normalizedFavorites(state.favorites)) {
+    const observed = CrossSiteStore.upsertObservedListings(
+      state.observedListingsV1,
+      [],
+      favoriteItems,
+      now(),
+      { retentionDays: 90, maxNonFavorites: 500 }
+    );
+    const overrides = CrossSiteStore.pruneMatchMetadata(state.listingMatchOverridesV1, observed.items);
+    const patch = {};
+    if (!hasSameSerializedValue(observed, state.observedListingsV1)) {
+      patch.observedListingsV1 = observed;
+    }
+    if (!hasSameSerializedValue(overrides, state.listingMatchOverridesV1)) {
+      patch.listingMatchOverridesV1 = overrides;
+    }
+    if (Object.keys(patch).length > 0) await set(patch);
+    return {
+      ...state,
+      observedListingsV1: observed,
+      listingMatchOverridesV1: overrides
+    };
+  }
+
   async function persistObserved(observed, overrides, favorites) {
     try {
       await set({ observedListingsV1: observed, listingMatchOverridesV1: overrides });
@@ -65,13 +98,15 @@ function createCrossSiteController({ get, set, openSidePanel, now }) {
   }
 
   async function getState() {
-    const state = await get(defaults);
-    return {
-      observed: state.observedListingsV1,
-      overrides: state.listingMatchOverridesV1,
-      aliases: state.buildingAliasesV1,
-      settings: state.crossSiteMatchingSettingsV1
-    };
+    return enqueue(async () => {
+      const state = await pruneStoredState(await get(defaults));
+      return {
+        observed: state.observedListingsV1,
+        overrides: state.listingMatchOverridesV1,
+        aliases: state.buildingAliasesV1,
+        settings: state.crossSiteMatchingSettingsV1
+      };
+    });
   }
 
   function favoriteToObservedRecord(favorite) {
@@ -94,10 +129,15 @@ function createCrossSiteController({ get, set, openSidePanel, now }) {
   async function backfillFavorites() {
     return enqueue(async () => {
       const state = await get(defaults);
-      if (state.crossSiteMatchingSettingsV1?.enabled === false) return { ok: true, disabled: true };
-      if (state.crossSiteMigrationsV1?.favoriteBackfillCompleted) return { ok: true, skipped: true };
-      const favoriteItems = (Array.isArray(state.favorites) ? state.favorites : [])
-        .map(favorite => ({ ...favorite, url: CrossSiteMatcher.normalizeUrl(favorite.url) }));
+      const favoriteItems = normalizedFavorites(state.favorites);
+      if (
+        state.crossSiteMatchingSettingsV1?.enabled === false ||
+        state.crossSiteMigrationsV1?.favoriteBackfillCompleted
+      ) {
+        await pruneStoredState(state, favoriteItems);
+        if (state.crossSiteMatchingSettingsV1?.enabled === false) return { ok: true, disabled: true };
+        return { ok: true, skipped: true };
+      }
       const records = favoriteItems
         .filter(favorite => favorite?.site && favorite?.url)
         .map(favoriteToObservedRecord);
@@ -118,9 +158,11 @@ function createCrossSiteController({ get, set, openSidePanel, now }) {
   async function upsert(records) {
     return enqueue(async () => {
       const state = await get(defaults);
-      if (state.crossSiteMatchingSettingsV1?.enabled === false) return { ok: true, disabled: true, summaries: {} };
-      const favoriteItems = (Array.isArray(state.favorites) ? state.favorites : [])
-        .map(favorite => ({ ...favorite, url: CrossSiteMatcher.normalizeUrl(favorite.url) }));
+      const favoriteItems = normalizedFavorites(state.favorites);
+      if (state.crossSiteMatchingSettingsV1?.enabled === false) {
+        await pruneStoredState(state, favoriteItems);
+        return { ok: true, disabled: true, summaries: {} };
+      }
       const observed = CrossSiteStore.upsertObservedListings(
         state.observedListingsV1,
         records,

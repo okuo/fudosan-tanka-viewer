@@ -176,6 +176,115 @@ async function testCrossSiteController() {
   assert.equal(memory.crossSiteMigrationsV1.favoriteBackfillCompleted, true);
 }
 
+async function testCrossSiteRetentionCleanup() {
+  const nowValue = '2026-07-19T00:00:00.000Z';
+  const favoriteUrl = 'https://suumo.jp/favorite-stale';
+  const retainedOverride = {
+    leftKey: 'SUUMO:favorite-stale',
+    rightKey: 'MISSING:favorite-peer',
+    decision: 'same'
+  };
+  let memory = {
+    observedListingsV1: {
+      version: 1,
+      items: [
+        {
+          listingKey: 'SUUMO:expired',
+          url: 'https://suumo.jp/expired',
+          lastSeenAt: '2026-01-01T00:00:00.000Z'
+        },
+        {
+          listingKey: 'SUUMO:favorite-stale',
+          url: favoriteUrl,
+          lastSeenAt: '2026-01-01T00:00:00.000Z'
+        },
+        {
+          listingKey: 'HOMES:recent',
+          url: 'https://www.homes.co.jp/recent',
+          lastSeenAt: '2026-07-18T00:00:00.000Z'
+        }
+      ]
+    },
+    listingMatchOverridesV1: {
+      version: 1,
+      buildingPairs: [
+        { leftKey: 'SUUMO:expired', rightKey: 'MISSING:expired-peer', decision: 'same' },
+        retainedOverride
+      ],
+      unitPairs: [
+        { leftKey: 'SUUMO:expired', rightKey: 'MISSING:expired-unit-peer', decision: 'different' }
+      ]
+    },
+    buildingAliasesV1: { version: 1, entries: [] },
+    crossSiteMatchingSettingsV1: { enabled: false, retentionDays: 90 },
+    crossSiteMigrationsV1: { favoriteBackfillCompleted: true },
+    favorites: [{ url: favoriteUrl }]
+  };
+  const writes = [];
+  const controller = createCrossSiteController({
+    get: async defaults => ({ ...defaults, ...memory }),
+    set: async (patch) => {
+      writes.push(patch);
+      memory = { ...memory, ...patch };
+    },
+    openSidePanel: async () => undefined,
+    now: () => nowValue
+  });
+
+  const startupResult = await controller.backfillFavorites();
+  assert.equal(startupResult.disabled, true);
+  assert.deepEqual(
+    memory.observedListingsV1.items.map(item => item.listingKey),
+    ['SUUMO:favorite-stale', 'HOMES:recent']
+  );
+  assert.deepEqual(memory.listingMatchOverridesV1, {
+    version: 1,
+    buildingPairs: [retainedOverride],
+    unitPairs: []
+  });
+  assert.equal(writes.length, 1);
+
+  await controller.backfillFavorites();
+  assert.equal(writes.length, 1);
+
+  memory.observedListingsV1 = {
+    version: 1,
+    items: [
+      ...memory.observedListingsV1.items,
+      {
+        listingKey: 'ATHOME:expired-on-read',
+        url: 'https://www.athome.co.jp/expired-on-read',
+        lastSeenAt: '2026-01-02T00:00:00.000Z'
+      }
+    ]
+  };
+  memory.listingMatchOverridesV1 = {
+    ...memory.listingMatchOverridesV1,
+    unitPairs: [{
+      leftKey: 'ATHOME:expired-on-read',
+      rightKey: 'MISSING:read-peer',
+      decision: 'different'
+    }]
+  };
+
+  const state = await controller.getState();
+  assert.deepEqual(
+    state.observed.items.map(item => item.listingKey),
+    ['SUUMO:favorite-stale', 'HOMES:recent']
+  );
+  assert.deepEqual(state.overrides, {
+    version: 1,
+    buildingPairs: [retainedOverride],
+    unitPairs: []
+  });
+  assert.deepEqual(memory.observedListingsV1, state.observed);
+  assert.deepEqual(memory.listingMatchOverridesV1, state.overrides);
+  assert.equal(writes.length, 2);
+
+  await controller.getState();
+  assert.equal(writes.length, 2);
+}
+
 async function testCrossSiteMessageListener() {
   let registeredListener = null;
   const previousChrome = global.chrome;
@@ -234,6 +343,8 @@ async function testCrossSiteMessageListener() {
 async function run() {
   await testCrossSiteController();
   console.log('cross-site controller tests passed');
+  await testCrossSiteRetentionCleanup();
+  console.log('cross-site retention cleanup tests passed');
   await testCrossSiteMessageListener();
   console.log('cross-site message listener tests passed');
 }
