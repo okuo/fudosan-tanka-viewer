@@ -518,25 +518,44 @@ async function testCrossSiteSidePanel(context, extensionId) {
   }, result => resolve(result.listingMatchOverridesV1.buildingPairs.some(pair => pair.decision === 'same')))));
   await page.reload();
   await page.waitForFunction(() => document.querySelectorAll('.cross-site-building-card').length === 1);
+  const mergedBuildingCard = page.locator('.cross-site-building-card').first();
+  assert.equal(await mergedBuildingCard.locator('.cross-site-listing-row').count(), 4);
+  assert.equal(await page.getByRole('button', { name: '同じマンション', exact: true }).count(), 0);
+  assert.equal(await page.getByRole('button', { name: '同じ住戸', exact: true }).count(), 1);
+  assert.match(
+    await page.locator('.cross-site-manual-decision').innerText(),
+    /同じマンションとして確認済み/
+  );
   await page.locator('.cross-site-decision-clear').first().click();
   await page.waitForFunction(() => new Promise(resolve => chrome.storage.local.get({
     listingMatchOverridesV1: { buildingPairs: [] }
   }, result => resolve(result.listingMatchOverridesV1.buildingPairs.length === 0))));
   await page.reload();
-  await page.waitForSelector('.cross-site-candidate', { timeout: 10000 });
-  await page.locator('.cross-site-candidate button', { hasText: '別の物件' }).click();
+  const candidateAfterSameClear = page.locator('.cross-site-candidate:not(.cross-site-manual-decision)').filter({
+    has: page.getByRole('button', { name: '同じマンション', exact: true })
+  }).first();
+  await candidateAfterSameClear.waitFor({ timeout: 10000 });
+  assert.equal(await candidateAfterSameClear.locator('button', { hasText: '同じマンション' }).count(), 1);
+  assert.equal(await candidateAfterSameClear.locator('button', { hasText: '別の物件' }).count(), 1);
+  await candidateAfterSameClear.locator('button', { hasText: '別の物件' }).click();
   await page.waitForFunction(() => new Promise(resolve => chrome.storage.local.get({
     listingMatchOverridesV1: { buildingPairs: [] }
   }, result => resolve(result.listingMatchOverridesV1.buildingPairs.some(pair => pair.decision === 'different')))));
   await page.reload();
   await page.waitForSelector('.cross-site-manual-decision', { timeout: 10000 });
+  assert.equal(await page.getByRole('button', { name: '同じマンション', exact: true }).count(), 0);
   assert.match(await page.locator('.cross-site-manual-decision').innerText(), /別のマンションとして確認済み/);
   await page.locator('.cross-site-decision-clear').first().click();
   await page.waitForFunction(() => new Promise(resolve => chrome.storage.local.get({
     listingMatchOverridesV1: { buildingPairs: [] }
   }, result => resolve(result.listingMatchOverridesV1.buildingPairs.length === 0))));
   await page.reload();
-  await page.waitForSelector('.cross-site-candidate', { timeout: 10000 });
+  const candidateAfterDifferentClear = page.locator('.cross-site-candidate:not(.cross-site-manual-decision)').filter({
+    has: page.getByRole('button', { name: '同じマンション', exact: true })
+  }).first();
+  await candidateAfterDifferentClear.waitFor({ timeout: 10000 });
+  assert.equal(await candidateAfterDifferentClear.locator('button', { hasText: '同じマンション' }).count(), 1);
+  assert.equal(await candidateAfterDifferentClear.locator('button', { hasText: '別の物件' }).count(), 1);
 
   await page.evaluate(() => new Promise(resolve => chrome.storage.local.set({
     crossSitePendingSelectionV1: 'REHOUSE:candidate'
