@@ -87,6 +87,24 @@
       </div>
     </section>
 
+    <section class="cross-site-settings" aria-labelledby="cross-site-settings-title">
+      <div class="cross-site-settings-header">
+        <div>
+          <h2 id="cross-site-settings-title">サイト横断照合</h2>
+          <p>対応サイトで閲覧した物件情報をブラウザ内だけに保存し、同じマンション・住戸を比較します。</p>
+        </div>
+        <label class="cross-site-toggle">
+          <input id="cross-site-enabled" type="checkbox" checked>
+          <span>有効</span>
+        </label>
+      </div>
+      <p class="cross-site-retention">非お気に入りは90日・直近500件まで。未閲覧サイトは検索しません。</p>
+      <div class="cross-site-settings-actions">
+        <button id="clear-cross-site-data" type="button">閲覧物件データを削除</button>
+        <span id="cross-site-settings-status" aria-live="polite"></span>
+      </div>
+    </section>
+
     <div id="favorites-list" class="favorites-list"></div>
     <div id="empty-message" class="empty-message" style="display: none;">
       お気に入りはまだありません

@@ -36,6 +36,16 @@ const VIEWING_CHECKLIST_ITEMS = [
 
 const RELEASE_NOTES = [
   {
+    version: '1.12.0',
+    title: 'サイト横断・同一物件チェッカーを追加',
+    items: [
+      '対応4サイトで閲覧した同じマンション・住戸を、Side Panelでまとめて比較できるようにしました。',
+      '同一住戸の価格差、管理費・修繕積立金の記載差、掲載サイトを確認できます。',
+      '閲覧物件情報はブラウザ内だけに保存され、未閲覧サイトへの自動アクセスや外部送信は行いません。',
+      '横断照合の停止と閲覧物件データの削除は、ポップアップからいつでも行えます。'
+    ]
+  },
+  {
     version: '1.11.0',
     title: 'AI物件メモを追加',
     items: [
@@ -128,13 +138,29 @@ function getCurrentVersion() {
   return chrome.runtime.getManifest().version || '';
 }
 
+function isLocalBuildManifest(manifest) {
+  return /\blocal\b/i.test(manifest.version_name || '') ||
+    /\bLOCAL\b/.test(manifest.name || '') ||
+    /\bLOCAL\b/.test(manifest.action?.default_title || '');
+}
+
 function renderExtensionVersion() {
   const versionEl = document.getElementById('extension-version');
   if (!versionEl || typeof chrome === 'undefined' || !chrome.runtime?.getManifest) return;
 
   const manifest = chrome.runtime.getManifest();
-  versionEl.textContent = `v${manifest.version}`;
-  versionEl.title = `${manifest.name} v${manifest.version} の更新内容`;
+  const isLocal = isLocalBuildManifest(manifest);
+  const versionName = manifest.version_name || manifest.version;
+  const brandTitle = document.querySelector('.popup-brand h1');
+
+  versionEl.textContent = isLocal ? `LOCAL v${manifest.version}` : `v${manifest.version}`;
+  versionEl.title = `${manifest.name} ${versionName} の更新内容`;
+  versionEl.classList.toggle('extension-version--local', isLocal);
+  document.body.classList.toggle('is-local-build', isLocal);
+
+  if (brandTitle) {
+    brandTitle.textContent = isLocal ? '坪たん LOCAL' : '坪たん';
+  }
 }
 
 function renderReleaseNotes() {
@@ -586,7 +612,59 @@ function getViewingChecklistState(fav) {
 function getViewingChecklistProgress(fav) {
   const state = getViewingChecklistState(fav);
   const completed = VIEWING_CHECKLIST_ITEMS.filter(item => state[item.id]).length;
-  return { completed, total: VIEWING_CHECKLIST_ITEMS.length };
+  const aiItems = getAiViewingChecklistItems(fav);
+  const aiCompleted = aiItems.filter(item => state[item.id]).length;
+  return { completed: completed + aiCompleted, total: VIEWING_CHECKLIST_ITEMS.length + aiItems.length };
+}
+
+function getAiViewingChecklistItems(fav) {
+  return Array.isArray(fav.aiViewingChecklist)
+    ? fav.aiViewingChecklist.filter(item => item?.id && item?.label)
+    : [];
+}
+
+function createAiViewingChecklistBlock(fav) {
+  const items = getAiViewingChecklistItems(fav);
+  if (items.length === 0) return null;
+
+  const state = getViewingChecklistState(fav);
+  const block = document.createElement('div');
+  block.className = 'checklist-ai-block';
+
+  const title = document.createElement('div');
+  title.className = 'checklist-ai-title';
+  title.textContent = 'AIチェック';
+  block.appendChild(title);
+
+  const list = document.createElement('div');
+  list.className = 'checklist-ai-list';
+  items.forEach((item) => {
+    const label = document.createElement('label');
+    label.className = 'checklist-ai-item';
+
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.checked = Boolean(state[item.id]);
+    checkbox.addEventListener('change', () => {
+      updateFavoriteChecklistItem(fav.url, item.id, checkbox.checked);
+    });
+    label.appendChild(checkbox);
+
+    const body = document.createElement('span');
+    const itemLabel = document.createElement('strong');
+    itemLabel.textContent = item.label;
+    body.appendChild(itemLabel);
+    if (item.reason) {
+      const reason = document.createElement('em');
+      reason.textContent = item.reason;
+      body.appendChild(reason);
+    }
+    label.appendChild(body);
+    list.appendChild(label);
+  });
+
+  block.appendChild(list);
+  return block;
 }
 
 function renderViewingChecklist(favorites) {
@@ -662,6 +740,9 @@ function renderViewingChecklist(favorites) {
       grid.appendChild(label);
     });
     section.appendChild(grid);
+
+    const aiChecklistBlock = createAiViewingChecklistBlock(fav);
+    if (aiChecklistBlock) section.appendChild(aiChecklistBlock);
 
     const note = document.createElement('textarea');
     note.className = 'checklist-note';
@@ -981,6 +1062,49 @@ function setupLoanSettings() {
   loadLoanSettings();
 }
 
+function showCrossSiteSettingsStatus(text, tone = '') {
+  const status = document.getElementById('cross-site-settings-status');
+  if (!status) return;
+  status.textContent = text;
+  status.dataset.tone = tone;
+}
+
+function loadCrossSiteSettings() {
+  chrome.storage.local.get({
+    crossSiteMatchingSettingsV1: { enabled: true, retentionDays: 90 }
+  }, (result) => {
+    const toggle = document.getElementById('cross-site-enabled');
+    if (toggle) toggle.checked = result.crossSiteMatchingSettingsV1.enabled !== false;
+  });
+}
+
+async function saveCrossSiteSettings() {
+  const enabled = document.getElementById('cross-site-enabled')?.checked !== false;
+  const response = await chrome.runtime.sendMessage({
+    type: 'CROSS_SITE_SAVE_SETTINGS',
+    settings: { enabled, retentionDays: 90 }
+  });
+  if (!response?.ok) throw new Error(response?.error || '設定を保存できませんでした');
+  showCrossSiteSettingsStatus(enabled ? '横断照合を有効にしました' : '横断照合を停止しました');
+}
+
+async function clearCrossSiteData() {
+  if (!window.confirm('閲覧物件、手動判定、確認済みの名称別名を削除しますか？お気に入りは削除されません。')) return;
+  const response = await chrome.runtime.sendMessage({ type: 'CROSS_SITE_CLEAR' });
+  if (!response?.ok) throw new Error(response?.error || '閲覧物件データを削除できませんでした');
+  showCrossSiteSettingsStatus('閲覧物件データを削除しました');
+}
+
+function setupCrossSiteSettings() {
+  document.getElementById('cross-site-enabled')?.addEventListener('change', () => {
+    saveCrossSiteSettings().catch(error => showCrossSiteSettingsStatus(error.message, 'error'));
+  });
+  document.getElementById('clear-cross-site-data')?.addEventListener('click', () => {
+    clearCrossSiteData().catch(error => showCrossSiteSettingsStatus(error.message, 'error'));
+  });
+  loadCrossSiteSettings();
+}
+
 function formatRecheckSummary(response) {
   if (!response || response.error) {
     return response?.error || '再チェックに失敗しました';
@@ -1187,6 +1311,10 @@ chrome.storage.onChanged.addListener((changes, areaName) => {
   if (changes.loanSettings) {
     renderLoanSettings(normalizeLoanSettings(changes.loanSettings.newValue));
   }
+
+  if (changes.crossSiteMatchingSettingsV1) {
+    loadCrossSiteSettings();
+  }
 });
 
 renderExtensionVersion();
@@ -1195,4 +1323,5 @@ setupViewTabs();
 setupFavoriteRecheck();
 setupPopupActions();
 setupLoanSettings();
+setupCrossSiteSettings();
 loadFavorites();

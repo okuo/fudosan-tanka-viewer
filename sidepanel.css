@@ -308,11 +308,203 @@ button {
 }
 
 .side-compare-board {
+  margin-top: 10px;
   overflow: auto;
   border: 1px solid var(--side-line);
   border-radius: 9px;
   background: #ffffff;
 }
+
+.side-similar-panel {
+  margin-bottom: 10px;
+  padding: 12px;
+  border: 1px solid var(--side-line);
+  border-radius: 9px;
+  background: #ffffff;
+}
+
+.side-similar-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.side-similar-header h2 {
+  margin: 0;
+  color: var(--side-ink);
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.side-similar-header p {
+  margin: 3px 0 0;
+  color: var(--side-muted);
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1.35;
+}
+
+.side-small-action {
+  flex-shrink: 0;
+  min-height: 30px;
+  padding: 5px 9px;
+  border: 1px solid var(--side-line);
+  border-radius: 7px;
+  background: #ffffff;
+  color: var(--side-blue);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.side-small-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.55;
+}
+
+.side-similar-status {
+  margin-top: 7px;
+  color: var(--side-muted);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.side-similar-status[data-tone="success"] {
+  color: var(--side-green);
+}
+
+.side-similar-status[data-tone="warn"] {
+  color: var(--side-amber);
+}
+
+.side-similar-groups {
+  display: grid;
+  gap: 9px;
+  margin-top: 9px;
+}
+
+.side-similar-card {
+  padding: 9px;
+  border: 1px solid var(--side-line-soft);
+  border-radius: 8px;
+  background: var(--side-soft);
+}
+
+.side-similar-title {
+  color: var(--side-ink);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.side-similar-reason {
+  margin-top: 3px;
+  color: var(--side-muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.side-similar-items {
+  display: grid;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.side-similar-item {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid #dbeafe;
+  border-radius: 7px;
+  background: #ffffff;
+  color: var(--side-ink);
+  text-align: left;
+}
+
+.side-similar-item strong,
+.side-similar-item span {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.side-similar-item strong {
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.side-similar-item span {
+  margin-top: 2px;
+  color: var(--side-muted);
+  font-size: 10px;
+  font-weight: 800;
+}
+
+.side-similar-ai-comment {
+  margin-top: 8px;
+  padding: 7px 8px;
+  border-left: 3px solid #0891b2;
+  border-radius: 6px;
+  background: #ecfeff;
+  color: #155e75;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.cross-site-building-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid #dbeafe;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.cross-site-building-title,
+.cross-site-unit-title,
+.cross-site-listing-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.cross-site-building-title { color: #172554; font-size: 13px; font-weight: 800; }
+.cross-site-unit-card { padding: 8px; border: 1px solid #e2e8f0; border-radius: 6px; background: #f8fafc; }
+.cross-site-unit-title { margin-bottom: 6px; color: #334155; font-size: 11px; font-weight: 700; }
+.cross-site-listing-row { padding: 8px 0; border-top: 1px solid #e2e8f0; }
+.cross-site-listing-row--selected { margin: 0 -6px; padding: 8px 6px; background: #eff6ff; }
+.cross-site-site { padding: 2px 6px; border-radius: 999px; color: #fff; font-size: 9px; font-weight: 800; }
+.cross-site-site--SUUMO { background: #0ea5e9; }
+.cross-site-site--REHOUSE { background: #10b981; }
+.cross-site-site--ATHOME { background: #f59e0b; }
+.cross-site-site--HOMES { background: #8b5cf6; }
+.cross-site-best { padding: 2px 6px; border-radius: 999px; background: #dcfce7; color: #15803d; font-size: 9px; font-style: normal; font-weight: 800; }
+.cross-site-price-diff { color: #b45309; font-size: 10px; font-weight: 700; }
+.cross-site-listing-meta { margin: 5px 0; color: #64748b; font-size: 10px; line-height: 1.45; }
+.cross-site-difference-chip { display: inline-flex; margin: 2px 4px 2px 0; padding: 2px 6px; border-radius: 999px; background: #fef3c7; color: #92400e; font-size: 9px; font-weight: 700; }
+.cross-site-candidate { padding: 9px; border: 1px solid #fcd34d; border-radius: 6px; background: #fffbeb; }
+.cross-site-candidate--selected { border-color: #2563eb; background: #eff6ff; box-shadow: 0 0 0 2px #bfdbfe; }
+.cross-site-manual-decision { display: flex; align-items: center; justify-content: space-between; gap: 8px; border-color: #cbd5e1; background: #f8fafc; }
+.cross-site-decision-actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 7px; }
+.cross-site-decision-actions button,
+.cross-site-decision-clear,
+.cross-site-open-listing {
+  min-height: 32px;
+  border: 1px solid #cbd5e1;
+  border-radius: 5px;
+  padding: 5px 8px;
+  background: #fff;
+  color: #334155;
+  font: inherit;
+  font-size: 10px;
+  font-weight: 700;
+  cursor: pointer;
+}
+.cross-site-decision-actions button:focus-visible,
+.cross-site-decision-clear:focus-visible,
+.cross-site-open-listing:focus-visible { outline: 2px solid #2563eb; outline-offset: 2px; }
 
 .side-compare-table {
   width: max-content;
@@ -534,6 +726,62 @@ button {
   width: 14px;
   height: 14px;
   accent-color: var(--side-blue-bright);
+}
+
+.side-ai-checklist-block {
+  margin-top: 10px;
+  padding: 9px;
+  border: 1px solid #bae6fd;
+  border-radius: 8px;
+  background: #f0fdff;
+}
+
+.side-ai-checklist-title {
+  color: #0e7490;
+  font-size: 11px;
+  font-weight: 900;
+}
+
+.side-ai-checklist-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.side-ai-checklist-item {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 7px;
+  align-items: start;
+  color: #334155;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.side-ai-checklist-item input {
+  width: 14px;
+  height: 14px;
+  margin-top: 2px;
+  accent-color: #0891b2;
+}
+
+.side-ai-checklist-item strong,
+.side-ai-checklist-item em {
+  display: block;
+  min-width: 0;
+}
+
+.side-ai-checklist-item strong {
+  color: var(--side-ink);
+}
+
+.side-ai-checklist-item em {
+  margin-top: 2px;
+  color: var(--side-muted);
+  font-size: 10px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 1.45;
 }
 
 .site-badge-sample {

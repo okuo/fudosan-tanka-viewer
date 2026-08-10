@@ -34,6 +34,7 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 - **住宅ローン条件の保存**: ポップアップまたは詳細ページのシミュレーションで設定した金利・返済年数・頭金を `chrome.storage.local` に保存
 - **住宅ローンシミュレーション**: 頭金・金利・返済期間をスライダーで調整してリアルタイム計算（詳細ページ、折りたたみUI）
 - **お気に入り機能**: 物件を「坪たんに登録」ボタンでブックマーク、ポップアップでサイト横断一覧管理・メモ保存・並び替え（chrome.storage.local使用）
+- **4サイト横断・同一物件比較**: 対応4サイトで閲覧した物件を正規化してローカル索引へ保存し、同じマンション・住戸の掲載差をSide Panelで比較
 - **価格改定ウォッチ**: お気に入り物件の価格を再訪時に比較し、値下がり/値上がりをページ上とポップアップに表示
 - **お気に入り自動再チェック**: `background.js` の alarms でお気に入り物件の価格・掲載状態を定期確認（最大5件/回、24時間以上未確認の物件）
 - **価格推移グラフ**: ポップアップで価格履歴をミニグラフ表示
@@ -51,6 +52,8 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 ```
 fudosan-tanka-viewer/
 ├── manifest.json          # Chrome拡張の設定（Manifest V3）
+├── property-matcher.js    # 閲覧物件の正規化・建物/住戸照合
+├── observed-listings-store.js # 横断照合データの保持・手動判定
 ├── background.js          # お気に入り再チェック用 service worker
 ├── content.js             # メインロジック（DOM監視、計算、表示）
 ├── styles.css             # 坪単価表示のスタイル
@@ -136,6 +139,24 @@ Chrome拡張として読み込むE2Eは通常環境では `npm run test:e2e` を
    - 無限スクロールで新規追加される物件を検知
    - 自分が追加した`.fudosan-unit-price`要素は無視（無限ループ防止）
    - 新しいノードが追加されたら自動処理
+
+### 4サイト横断・同一物件照合
+
+対応4サイトでユーザーが実際に閲覧した物件を `property-matcher.js` で正規化し、`observed-listings-store.js` と `background.js` を介して `chrome.storage.local` のローカル索引へ保存する。対応サイト上の全掲載を収集・網羅する機能ではない。
+
+- 保存する閲覧情報: URL、サイト、物件・建物名、住所、価格、専有面積、間取り、階数、管理費、修繕積立金、仲介会社、掲載状態、確認日時
+- 照合順序: 建物を先に判定し、その建物内で住戸を判定する。高信頼度の自動照合には住所の街区一致が必須
+- 手動判定: ユーザーが保存した「同じ」「別」は自動判定より優先する。「同じ」と確認した建物名の別名は住所の街区単位に限定して保存する
+- 保持: お気に入り以外は最終確認から90日で期限切れとなり、新しい順で最大500件。お気に入りは保持期限・件数制限の対象外
+- 既存データ移行: バージョン1.12.0より前のお気に入りを一度だけ索引へ取り込む。横断データ削除はお気に入りを削除せず、移行済みマーカーを残して削除後の暗黙的な再作成を防ぐ
+- 通信: 照合は閲覧履歴内だけで行う。未閲覧サイトの巡回・リクエストや、横断照合データの外部サーバー・分析サービスへの送信は行わない
+- 操作: ポップアップから照合の停止と横断データの削除が可能
+
+**共有スクリプト:** `property-matcher.js`（正規化、建物/住戸照合、比較グループ）と `observed-listings-store.js`（保持期限、最大件数、手動判定、別名、削除）
+
+**ユーザーデータ/設定の4キー:** `observedListingsV1`、`listingMatchOverridesV1`、`buildingAliasesV1`、`crossSiteMatchingSettingsV1`
+
+**補助キー:** `crossSitePendingSelectionV1` はSide Panelへ選択を渡す一時キー、`crossSiteMigrationsV1` はお気に入りの一度限りの移行状態を保持する内部キー
 
 ### 計算式
 

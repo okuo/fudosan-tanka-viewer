@@ -53,6 +53,17 @@
     </section>
 
     <section id="compare-panel" class="side-panel-view">
+      <section class="side-similar-panel" aria-label="横断掲載まとめ">
+        <div class="side-similar-header">
+          <div>
+            <h2>横断掲載まとめ</h2>
+            <p>閲覧履歴内の同じマンション・住戸をサイト横断でまとめます。</p>
+          </div>
+          <button id="side-similar-ai" class="side-small-action" type="button">AI短評</button>
+        </div>
+        <div id="side-similar-status" class="side-similar-status"></div>
+        <div id="side-similar-groups" class="side-similar-groups"></div>
+      </section>
       <div id="side-compare-board" class="side-compare-board"></div>
       <p id="compare-empty" class="side-empty" hidden>比較できる候補はまだありません。</p>
     </section>
@@ -97,6 +108,7 @@
 
   <div id="side-status" class="side-status" aria-live="polite"></div>
 
+  <script src="property-matcher.js"></script>
   <script src="sidepanel.js"></script>
 </body>
 </html>

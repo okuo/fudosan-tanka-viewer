@@ -8,8 +8,8 @@ rm -rf dist
 
 # Create dist folder and copy required files
 mkdir -p dist/icons
-cp manifest.json background.js content.js styles.css popup.html popup.js popup.css sidepanel.html sidepanel.js sidepanel.css dist/
-cp icons/icon16.png icons/icon48.png icons/icon128.png dist/icons/
+cp manifest.json property-matcher.js observed-listings-store.js background.js content.js styles.css popup.html popup.js popup.css sidepanel.html sidepanel.js sidepanel.css dist/
+cp icons/icon16.png icons/icon32.png icons/icon48.png icons/icon128.png dist/icons/
 
 # Remove old zip if exists
 rm -f fudosan-tanka-viewer.zip

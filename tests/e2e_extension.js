@@ -25,7 +25,13 @@ const EXTENSION_FILES = [
   'popup.html',
   'popup.js',
   'popup.css',
+  'property-matcher.js',
+  'observed-listings-store.js',
+  'sidepanel.html',
+  'sidepanel.js',
+  'sidepanel.css',
   'icons/icon16.png',
+  'icons/icon32.png',
   'icons/icon48.png',
   'icons/icon128.png'
 ];
@@ -98,14 +104,14 @@ function buildSuumoFixture() {
 <body>
   <main>
     <div class="dottable--cassette">
-      <h2><a href="/ms/chuko/tokyo/sc_chuo/nc_123456/">晴海テストタワー</a></h2>
-      <div class="dottable-value">2億5990万円</div>
+      <h2><a href="/ms/chuko/tokyo/sc_chuo/nc_123456/">晴海クロノレジデンス</a></h2>
+      <div class="dottable-value">1億2,000万円</div>
       <dl>
-        <dt>物件名</dt><dd>晴海テストタワー</dd>
-        <dt>所在地</dt><dd>東京都中央区晴海1</dd>
-        <dt>専有面積</dt><dd>70.00㎡</dd>
+        <dt>物件名</dt><dd>晴海クロノレジデンス</dd>
+        <dt>所在地</dt><dd>東京都中央区晴海2-3-30</dd>
+        <dt>専有面積</dt><dd>72.91㎡</dd>
       </dl>
-      <p>3LDK 築12年 徒歩9分 管理費 18,000円 修繕積立金 12,600円</p>
+      <p>48階 3LDK 管理費 22,000円 修繕積立金 15,000円</p>
     </div>
   </main>
 </body>
@@ -123,23 +129,25 @@ function buildRehouseDetailFixture() {
   <main class="property-detail">
     <div class="property-detail-information">
       <div class="building-else-price-info">
-        <h1>リハウステストタワー</h1>
+        <h1>晴海クロノレジデンス</h1>
         <div class="building-content">
-          <div class="building-info">3LDK/100.00㎡(約30.25坪)</div>
+          <div class="building-info">3LDK/72.91㎡(約22.05坪)</div>
         </div>
       </div>
       <div class="building-price-info">
-        <p class="text-price-regular price-size"><span class="amount">10,000</span><span class="unit">万円</span></p>
+        <p class="text-price-regular price-size"><span class="amount">12,100</span><span class="unit">万円</span></p>
       </div>
     </div>
     <section class="property-detail-infos">
       <table>
         <tbody>
-          <tr class="table-row"><td class="table-header label">価格</td><td class="table-data content">10,000万円</td></tr>
-          <tr class="table-row"><td class="table-header label">管理費等</td><td class="table-data content"><span>33,900円</span></td></tr>
-          <tr class="table-row"><td class="table-header label">修繕積立金</td><td class="table-data content"><span>30,500円</span></td></tr>
-          <tr class="table-row"><td class="table-header label">専有面積</td><td class="table-data content">100.00㎡(約30.25坪)</td></tr>
-          <tr class="table-row"><td class="table-header label">階数 / 階建</td><td class="table-data content">20階 / 地上32階 地下2階建</td></tr>
+          <tr class="table-row"><td class="table-header label">価格</td><td class="table-data content">12,100万円</td></tr>
+          <tr class="table-row"><td class="table-header label">所在地</td><td class="table-data content">東京都中央区晴海2-3-30</td></tr>
+          <tr class="table-row"><td class="table-header label">間取り</td><td class="table-data content">3LDK</td></tr>
+          <tr class="table-row"><td class="table-header label">管理費等</td><td class="table-data content"><span>22,000円</span></td></tr>
+          <tr class="table-row"><td class="table-header label">修繕積立金</td><td class="table-data content"><span>15,000円</span></td></tr>
+          <tr class="table-row"><td class="table-header label">専有面積</td><td class="table-data content">72.91㎡(約22.05坪)</td></tr>
+          <tr class="table-row"><td class="table-header label">階数 / 階建</td><td class="table-data content">48階 / 地上50階 地下2階建</td></tr>
           <tr class="table-row"><td class="table-header label">総戸数</td><td class="table-data content">387戸</td></tr>
         </tbody>
       </table>
@@ -158,15 +166,18 @@ function buildAthomeDetailFixture() {
 </head>
 <body>
   <main>
-    <h1>アットホームテストレジデンス</h1>
+    <h1>晴海クロノレジデンス</h1>
     <section class="property-outline">
       <table>
         <tbody>
-          <tr><td class="label">価格</td><td class="value">7,620万円</td></tr>
-          <tr><td class="label">専有面積</td><td class="value">45.00m²（壁芯）</td></tr>
-          <tr><td class="label">管理費</td><td class="value">12,000円/月</td></tr>
-          <tr><td class="label">修繕積立金</td><td class="value">9,000円/月</td></tr>
-          <tr><td class="label">階建</td><td class="value">14階建</td></tr>
+          <tr><td class="label">価格</td><td class="value">1億2,200万円</td></tr>
+          <tr><td class="label">所在地</td><td class="value">東京都中央区晴海2-3-30</td></tr>
+          <tr><td class="label">間取り</td><td class="value">3LDK</td></tr>
+          <tr><td class="label">専有面積</td><td class="value">72.91m²（壁芯）</td></tr>
+          <tr><td class="label">管理費</td><td class="value">22,000円/月</td></tr>
+          <tr><td class="label">修繕積立金</td><td class="value">15,000円/月</td></tr>
+          <tr><td class="label">所在階</td><td class="value">48階</td></tr>
+          <tr><td class="label">階建</td><td class="value">50階建</td></tr>
           <tr><td class="label">総戸数</td><td class="value">120戸</td></tr>
         </tbody>
       </table>
@@ -186,32 +197,32 @@ function buildHomesDetailFixture() {
 <body>
   <main>
     <h1 class="heading">
-      <span id="chk-bkh-name">HOMESテストタワー</span>
-      <span id="chk-bkh-room">12階</span>
+      <span id="chk-bkh-name">晴海クロノレジデンス</span>
+      <span id="chk-bkh-room">48階</span>
     </h1>
     <div class="mod-detailTopSale">
       <div class="line">
         <dl>
           <dt>価格</dt>
-          <dd>8,880万円</dd>
+          <dd>1億2,300万円</dd>
         </dl>
       </div>
       <div class="line">
         <dl>
           <dt>専有面積</dt>
-          <dd id="chk-bkc-housearea">75.80m² (壁心)</dd>
+          <dd id="chk-bkc-housearea">72.91m² (壁心)</dd>
         </dl>
       </div>
       <div class="line">
         <dl>
           <dt>管理費</dt>
-          <dd>19,800円/月</dd>
+          <dd>22,000円/月</dd>
         </dl>
       </div>
       <div class="line">
         <dl>
           <dt>修繕積立金</dt>
-          <dd>15,160円/月</dd>
+          <dd>15,000円/月</dd>
         </dl>
       </div>
     </div>
@@ -219,8 +230,12 @@ function buildHomesDetailFixture() {
       <table>
         <tbody>
           <tr>
-            <th>総戸数</th><td id="chk-bkd-allunit">1822戸</td>
-            <th>所在階 / 階数</th><td id="chk-bkd-housekai">12階 / 14階建 (地下1階)</td>
+            <th>所在地</th><td>東京都中央区晴海2-3-30</td>
+            <th>間取り</th><td>3LDK</td>
+          </tr>
+          <tr>
+            <th>総戸数</th><td id="chk-bkd-allunit">883戸</td>
+            <th>所在階 / 階数</th><td id="chk-bkd-housekai">48階 / 50階建 (地下1階)</td>
           </tr>
         </tbody>
       </table>
@@ -228,6 +243,66 @@ function buildHomesDetailFixture() {
   </main>
 </body>
 </html>`;
+}
+
+function buildHomesListFixture() {
+  return `<!doctype html>
+<html lang="ja">
+<body>
+  <section class="bukkenSpec">
+    <table>
+      <tbody>
+        <tr><th class="bukkenName"><a href="/mansion/b-222/">晴海クロノレジデンス</a></th></tr>
+        <tr><td class="bukkenAdress">東京都中央区晴海2-3-30</td></tr>
+        <tr><td class="price">1億2,300万円</td><td class="space">72.91m²</td></tr>
+        <tr><td>48階 3LDK 管理費 23,000円 修繕積立金 16,000円</td></tr>
+      </tbody>
+    </table>
+  </section>
+</body>
+</html>`;
+}
+
+function buildSuumoDetailObservedFixture() {
+  return `<!doctype html><html lang="ja"><body>
+    <h1>晴海クロノレジデンス</h1>
+    <div class="mt7 b">1億2,000万円</div>
+    <table><tbody>
+      <tr><th>価格</th><td>1億2,000万円</td></tr>
+      <tr><th>専有面積</th><td>72.91㎡（壁芯）</td></tr>
+      <tr><th>所在地</th><td>東京都中央区晴海2-3-30</td></tr>
+      <tr><th>間取り</th><td>3LDK</td></tr>
+      <tr><th>所在階</th><td>48階 / 50階建</td></tr>
+      <tr><th>管理費</th><td>22,000円</td></tr>
+      <tr><th>修繕積立金</th><td>15,000円</td></tr>
+    </tbody></table>
+  </body></html>`;
+}
+
+function buildRehouseListObservedFixture() {
+  return `<!doctype html><html lang="ja"><body>
+    <article class="property-index-card">
+      <h2 class="property-card-title"><a href="/buy/mansion/bkdetail/RH-LIST-777/">晴海クロノレジデンス</a></h2>
+      <p class="property-card-address">東京都中央区晴海2-3-30</p>
+      <strong class="price-text">1億2,100万円</strong>
+      <p class="paragraph-body">専有面積 72.91㎡</p>
+      <p>48階 3LDK 管理費 22,000円 修繕積立金 15,000円</p>
+    </article>
+  </body></html>`;
+}
+
+function buildAthomeListObservedFixture() {
+  return `<!doctype html><html lang="ja"><body>
+    <article class="card-box-inner">
+      <h3 class="title-wrap__title-text"><a class="select-link" href="/mansion/7777777777/">晴海クロノレジデンス</a></h3>
+      <p class="property-address">東京都中央区晴海2-3-30</p>
+      <div class="card-box-inner__detail">
+        <strong class="property-price">1億2,200万円</strong>
+        <div class="property-detail-table__block">専有面積 <span>72.91m²</span></div>
+        <p>48階 3LDK 管理費 22,000円 修繕積立金 15,000円</p>
+      </div>
+    </article>
+  </body></html>`;
 }
 
 async function testContentScript(context) {
@@ -257,6 +332,440 @@ async function testContentScript(context) {
   await page.close();
 }
 
+async function assertObservedRecord(storageProbe, expected) {
+  const recordIdentity = {
+    site: expected.site,
+    pageType: expected.pageType,
+    sourceListingId: expected.sourceListingId
+  };
+  const deadline = Date.now() + 10000;
+  let record = null;
+  while (!record && Date.now() < deadline) {
+    const candidate = await readObservedRecord(storageProbe, recordIdentity);
+    if (candidate && Date.parse(candidate.lastSeenAt) >= (expected.observedAfter || 0)) {
+      record = candidate;
+    }
+    if (!record) await storageProbe.waitForTimeout(50);
+  }
+  assert.ok(record, `observed record not found: ${recordIdentity.site}:${recordIdentity.sourceListingId}`);
+  const actual = {
+    rawName: record.rawName,
+    rawAddress: record.rawAddress,
+    normalizedBuildingName: record.normalizedBuildingName,
+    addressBlockKey: record.addressBlockKey,
+    areaSqm: record.areaSqm,
+    floor: record.floor,
+    layout: record.layout
+  };
+  assert.deepEqual(actual, expected.record, `${expected.site} ${expected.pageType} extraction mismatch`);
+  return record;
+}
+
+async function readObservedRecord(storageProbe, { site, pageType, sourceListingId }) {
+  return storageProbe.evaluate(({ targetSite, targetPageType, targetSourceListingId }) => new Promise((resolve) => {
+    chrome.storage.local.get({ observedListingsV1: { version: 1, items: [] } }, (result) => {
+      resolve(result.observedListingsV1.items.find(item => (
+        item.site === targetSite &&
+        (!targetPageType || item.pageType === targetPageType) &&
+        item.sourceListingId === targetSourceListingId
+      )) || null);
+    });
+  }), { targetSite: site, targetPageType: pageType, targetSourceListingId: sourceListingId });
+}
+
+async function removeObservedRecord(storageProbe, { site, sourceListingId }) {
+  await storageProbe.evaluate(({ site: targetSite, sourceListingId: targetSourceListingId }) => new Promise((resolve) => {
+    const listingKey = `${targetSite}:${targetSourceListingId}`;
+    chrome.storage.local.get({ observedListingsV1: { version: 1, items: [] } }, (result) => {
+      chrome.storage.local.set({
+        observedListingsV1: {
+          ...result.observedListingsV1,
+          items: result.observedListingsV1.items.filter(item => item.listingKey !== listingKey)
+        }
+      }, resolve);
+    });
+  }), { site, sourceListingId });
+}
+
+async function testCrossSiteContentBadge(context, extensionId) {
+  await context.route('https://www.homes.co.jp/mansion/chuko/list/**', route => route.fulfill({
+    status: 200,
+    contentType: 'text/html; charset=utf-8',
+    body: buildHomesListFixture()
+  }));
+  const storageProbe = await context.newPage();
+  await storageProbe.goto(`chrome-extension://${extensionId}/popup.html`);
+  const suumoPage = await context.newPage();
+  await suumoPage.goto('https://suumo.jp/ms/chuko/tokyo/sc_chuo/');
+  await storageProbe.waitForFunction(() => new Promise((resolve) => {
+    chrome.storage.local.get({ observedListingsV1: { items: [] } }, result => (
+      resolve(result.observedListingsV1.items.some(item => item.site === 'SUUMO'))
+    ));
+  }));
+
+  const homesPage = await context.newPage();
+  await homesPage.goto('https://www.homes.co.jp/mansion/chuko/list/');
+  await homesPage.waitForSelector('.fudosan-cross-site-badge', { timeout: 10000 });
+  assert.match(await homesPage.locator('.fudosan-cross-site-badge').innerText(), /横断一致 2サイト/);
+  assert.match(await homesPage.locator('.fudosan-cross-site-caption').innerText(), /閲覧履歴内/);
+  await suumoPage.reload();
+  await suumoPage.waitForSelector('.fudosan-cross-site-badge', { timeout: 10000 });
+  await suumoPage.evaluate(() => {
+    window.__crossSiteOriginalAnchor = document.querySelector('.fudosan-unit-price');
+    window.__crossSiteDetachedMutations = 0;
+    const observer = new MutationObserver((mutations) => {
+      window.__crossSiteDetachedMutations += mutations.length;
+    });
+    observer.observe(window.__crossSiteOriginalAnchor, { childList: true, subtree: true });
+    const externalNode = document.createElement('section');
+    externalNode.className = 'external-list-update';
+    document.body.appendChild(externalNode);
+  });
+  await suumoPage.waitForFunction(() => (
+    document.querySelector('.fudosan-unit-price') !== window.__crossSiteOriginalAnchor &&
+    Boolean(document.querySelector('.fudosan-cross-site-badge'))
+  ));
+  assert.equal(await suumoPage.evaluate(() => window.__crossSiteDetachedMutations), 0);
+  await storageProbe.evaluate(() => new Promise(resolve => chrome.storage.local.set({
+    crossSiteMatchingSettingsV1: { enabled: false, retentionDays: 90 }
+  }, resolve)));
+  await homesPage.waitForFunction(() => !document.querySelector('.fudosan-cross-site-badge'));
+  assert.equal(await homesPage.locator('.fudosan-cross-site-badge').count(), 0);
+  await storageProbe.evaluate(() => new Promise(resolve => chrome.storage.local.set({
+    crossSiteMatchingSettingsV1: { enabled: true, retentionDays: 90 }
+  }, resolve)));
+  await storageProbe.close();
+  await homesPage.close();
+  await suumoPage.close();
+  await context.unroute('https://www.homes.co.jp/mansion/chuko/list/**');
+}
+
+async function testCrossSiteSidePanel(context, extensionId) {
+  const page = await context.newPage();
+  await page.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await page.evaluate(() => new Promise((resolve) => chrome.storage.local.set({
+    observedListingsV1: {
+      version: 1,
+      items: [
+        {
+          listingKey: 'SUUMO:side-a', site: 'SUUMO', url: 'https://suumo.jp/side-a',
+          rawName: 'ザ・パークハウス新宿', normalizedBuildingName: 'ザパークハウス新宿',
+          rawAddress: '東京都新宿区西新宿1丁目2番3号', normalizedAddress: '東京都新宿区西新宿1-2-3',
+          municipalityTownKey: '東京都新宿区西新宿', addressBlockKey: '東京都新宿区西新宿1-2-3',
+          priceMan: 12000, areaSqm: 72.91, floor: 18, layout: '3LDK',
+          managementFeeYen: 22000, repairFundYen: 16000, listingStatus: 'active',
+          lastSeenAt: '2026-07-19T00:00:00.000Z'
+        },
+        {
+          listingKey: 'HOMES:side-b', site: 'HOMES', url: 'https://www.homes.co.jp/side-b',
+          rawName: 'ザ パークハウス 新宿', normalizedBuildingName: 'ザパークハウス新宿',
+          rawAddress: '東京都新宿区西新宿1-2-3', normalizedAddress: '東京都新宿区西新宿1-2-3',
+          municipalityTownKey: '東京都新宿区西新宿', addressBlockKey: '東京都新宿区西新宿1-2-3',
+          priceMan: 12300, areaSqm: 72.9, floor: 18, layout: '3LDK',
+          managementFeeYen: 23000, repairFundYen: 16000, listingStatus: 'active',
+          lastSeenAt: '2026-07-19T00:01:00.000Z'
+        },
+        {
+          listingKey: 'ATHOME:side-c', site: 'ATHOME', url: 'https://www.athome.co.jp/side-c',
+          rawName: 'ザパークハウス新宿', normalizedBuildingName: 'ザパークハウス新宿',
+          rawAddress: '東京都新宿区西新宿1-2-3', normalizedAddress: '東京都新宿区西新宿1-2-3',
+          municipalityTownKey: '東京都新宿区西新宿', addressBlockKey: '東京都新宿区西新宿1-2-3',
+          priceMan: 11800, areaSqm: 65.2, floor: 10, layout: '2LDK',
+          listingStatus: 'active', lastSeenAt: '2026-07-19T00:02:00.000Z'
+        }
+      ]
+    },
+    listingMatchOverridesV1: { version: 1, buildingPairs: [], unitPairs: [] },
+    buildingAliasesV1: { version: 1, entries: [] }
+  }, resolve)));
+  await page.reload();
+  await page.waitForSelector('.cross-site-building-card', { timeout: 10000 });
+  assert.equal(await page.locator('.cross-site-building-card').count(), 1);
+  assert.equal(await page.locator('.cross-site-unit-card').count(), 2);
+  assert.equal(await page.locator('.cross-site-listing-row').count(), 3);
+  assert.match(await page.locator('.cross-site-price-diff').first().innerText(), /300万円差/);
+  assert.equal(await page.locator('.cross-site-best').count(), 1);
+
+  await page.evaluate(() => new Promise((resolve) => {
+    chrome.storage.local.get({ observedListingsV1: { version: 1, items: [] } }, (result) => {
+      chrome.storage.local.set({
+        observedListingsV1: {
+          version: 1,
+          items: [...result.observedListingsV1.items, {
+            listingKey: 'REHOUSE:candidate',
+            site: 'REHOUSE',
+            url: 'https://www.rehouse.co.jp/buy/mansion/bkdetail/candidate/',
+            rawName: 'ザ パークハウス 新宿',
+            normalizedBuildingName: 'ザパークハウス新宿',
+            rawAddress: '東京都新宿区西新宿1丁目',
+            normalizedAddress: '東京都新宿区西新宿1',
+            municipalityTownKey: '東京都新宿区西新宿',
+            addressBlockKey: '',
+            areaSqm: 72.9,
+            floor: 48,
+            layout: '3LDK',
+            lastSeenAt: '2026-07-19T00:00:00.000Z'
+          }]
+        }
+      }, resolve);
+    });
+  }));
+  await page.waitForSelector('.cross-site-candidate', { timeout: 10000 });
+  assert.match(await page.locator('.cross-site-candidate').innerText(), /同一候補/);
+  await page.locator('.cross-site-candidate button', { hasText: '同じマンション' }).click();
+  await page.waitForFunction(() => new Promise(resolve => chrome.storage.local.get({
+    listingMatchOverridesV1: { buildingPairs: [] }
+  }, result => resolve(result.listingMatchOverridesV1.buildingPairs.some(pair => pair.decision === 'same')))));
+  await page.reload();
+  await page.waitForFunction(() => document.querySelectorAll('.cross-site-building-card').length === 1);
+  const mergedBuildingCard = page.locator('.cross-site-building-card').first();
+  assert.equal(await mergedBuildingCard.locator('.cross-site-listing-row').count(), 4);
+  assert.equal(await page.getByRole('button', { name: '同じマンション', exact: true }).count(), 0);
+  assert.equal(await page.getByRole('button', { name: '同じ住戸', exact: true }).count(), 1);
+  assert.match(
+    await page.locator('.cross-site-manual-decision').innerText(),
+    /同じマンションとして確認済み/
+  );
+  await page.locator('.cross-site-decision-clear').first().click();
+  await page.waitForFunction(() => new Promise(resolve => chrome.storage.local.get({
+    listingMatchOverridesV1: { buildingPairs: [] }
+  }, result => resolve(result.listingMatchOverridesV1.buildingPairs.length === 0))));
+  await page.reload();
+  const candidateAfterSameClear = page.locator('.cross-site-candidate:not(.cross-site-manual-decision)').filter({
+    has: page.getByRole('button', { name: '同じマンション', exact: true })
+  }).first();
+  await candidateAfterSameClear.waitFor({ timeout: 10000 });
+  assert.equal(await candidateAfterSameClear.locator('button', { hasText: '同じマンション' }).count(), 1);
+  assert.equal(await candidateAfterSameClear.locator('button', { hasText: '別の物件' }).count(), 1);
+  await candidateAfterSameClear.locator('button', { hasText: '別の物件' }).click();
+  await page.waitForFunction(() => new Promise(resolve => chrome.storage.local.get({
+    listingMatchOverridesV1: { buildingPairs: [] }
+  }, result => resolve(result.listingMatchOverridesV1.buildingPairs.some(pair => pair.decision === 'different')))));
+  await page.reload();
+  await page.waitForSelector('.cross-site-manual-decision', { timeout: 10000 });
+  assert.equal(await page.getByRole('button', { name: '同じマンション', exact: true }).count(), 0);
+  assert.match(await page.locator('.cross-site-manual-decision').innerText(), /別のマンションとして確認済み/);
+  await page.locator('.cross-site-decision-clear').first().click();
+  await page.waitForFunction(() => new Promise(resolve => chrome.storage.local.get({
+    listingMatchOverridesV1: { buildingPairs: [] }
+  }, result => resolve(result.listingMatchOverridesV1.buildingPairs.length === 0))));
+  await page.reload();
+  const candidateAfterDifferentClear = page.locator('.cross-site-candidate:not(.cross-site-manual-decision)').filter({
+    has: page.getByRole('button', { name: '同じマンション', exact: true })
+  }).first();
+  await candidateAfterDifferentClear.waitFor({ timeout: 10000 });
+  assert.equal(await candidateAfterDifferentClear.locator('button', { hasText: '同じマンション' }).count(), 1);
+  assert.equal(await candidateAfterDifferentClear.locator('button', { hasText: '別の物件' }).count(), 1);
+
+  await page.evaluate(() => new Promise(resolve => chrome.storage.local.set({
+    crossSitePendingSelectionV1: 'REHOUSE:candidate'
+  }, resolve)));
+  await page.waitForSelector('.cross-site-candidate--selected', { timeout: 10000 });
+  const selectedMemberKeys = JSON.parse(
+    await page.locator('.cross-site-candidate--selected').getAttribute('data-cross-site-member-keys')
+  );
+  assert.ok(selectedMemberKeys.includes('REHOUSE:candidate'));
+  const pendingState = await page.evaluate(() => new Promise(resolve => chrome.storage.local.get({
+    crossSitePendingSelectionV1: '',
+    observedListingsV1: { version: 1, items: [] }
+  }, result => resolve({
+    pending: result.crossSitePendingSelectionV1,
+    observedCount: result.observedListingsV1.items.length
+  }))));
+  assert.equal(pendingState.pending, '');
+  assert.equal(pendingState.observedCount, 4);
+  assert.doesNotMatch(
+    await page.locator('#side-status').innerText(),
+    /保存期間の終了などで見つかりませんでした/
+  );
+
+  await page.reload();
+  await page.evaluate(() => {
+    globalThis.LanguageModel = {
+      availability: async () => 'available',
+      create: async () => ({
+        prompt: () => new Promise((resolve) => {
+          globalThis.__resolveCrossSiteAiPrompt = resolve;
+        }),
+        destroy() {}
+      })
+    };
+    document.getElementById('side-search-input').dispatchEvent(new Event('input'));
+  });
+  await page.waitForFunction(() => !document.getElementById('side-similar-ai').disabled);
+  await page.locator('#side-similar-ai').click();
+  await page.waitForFunction(() => typeof globalThis.__resolveCrossSiteAiPrompt === 'function');
+  await page.evaluate(() => new Promise(resolve => chrome.storage.local.set({
+    observedListingsV1: {
+      version: 1,
+      items: [
+        {
+          listingKey: 'SUUMO:ai-b-1', site: 'SUUMO', url: 'https://suumo.jp/ai-b-1',
+          rawName: 'AIグループB', normalizedBuildingName: 'aiグループb',
+          rawAddress: '東京都港区芝1-2-3', normalizedAddress: '東京都港区芝1-2-3',
+          municipalityTownKey: '東京都港区芝', addressBlockKey: '東京都港区芝1-2-3',
+          priceMan: 8000, areaSqm: 60, floor: 8, layout: '2LDK',
+          lastSeenAt: '2026-07-19T01:00:00.000Z'
+        },
+        {
+          listingKey: 'HOMES:ai-b-2', site: 'HOMES', url: 'https://www.homes.co.jp/ai-b-2',
+          rawName: 'AIグループB', normalizedBuildingName: 'aiグループb',
+          rawAddress: '東京都港区芝1-2-3', normalizedAddress: '東京都港区芝1-2-3',
+          municipalityTownKey: '東京都港区芝', addressBlockKey: '東京都港区芝1-2-3',
+          priceMan: 8100, areaSqm: 60, floor: 8, layout: '2LDK',
+          lastSeenAt: '2026-07-19T01:01:00.000Z'
+        }
+      ]
+    }
+  }, resolve)));
+  await page.waitForFunction(() => document.querySelector('.cross-site-building-title')?.textContent === 'AIグループB');
+  await page.evaluate(() => {
+    globalThis.__resolveCrossSiteAiPrompt({ summaries: [{ comment: 'STALE_GROUP_A' }] });
+  });
+  await page.waitForFunction(() => document.getElementById('side-similar-ai').textContent === 'AI短評');
+  assert.equal(await page.locator('.side-similar-ai-comment').count(), 0);
+  assert.doesNotMatch(await page.locator('#side-similar-groups').innerText(), /STALE_GROUP_A/);
+  await page.close();
+}
+
+async function testDetailObservationIsStable(context, extensionId) {
+  const fixtureCase = {
+    site: 'SUUMO',
+    pageType: 'detail',
+    sourceListingId: '999999',
+    url: 'https://suumo.jp/ms/chuko/tokyo/sc_chuo/nc_999999/',
+    record: {
+      rawName: '晴海クロノレジデンス',
+      rawAddress: '東京都中央区晴海2-3-30',
+      normalizedBuildingName: '晴海クロノレジデンス',
+      addressBlockKey: '東京都中央区晴海2-3-30',
+      areaSqm: 72.91,
+      floor: 48,
+      layout: '3LDK'
+    }
+  };
+  const storageProbe = await context.newPage();
+  await storageProbe.goto(`chrome-extension://${extensionId}/popup.html`);
+  await removeObservedRecord(storageProbe, fixtureCase);
+  fixtureCase.observedAfter = Date.now();
+  await storageProbe.evaluate((seenAt) => new Promise((resolve) => {
+    const counterpart = {
+      site: 'HOMES',
+      sourceListingId: 'stable-counterpart',
+      listingKey: 'HOMES:stable-counterpart',
+      url: 'https://www.homes.co.jp/mansion/b-stable-counterpart/',
+      pageType: 'list',
+      rawName: '晴海クロノレジデンス',
+      rawAddress: '東京都中央区晴海2-3-30',
+      normalizedBuildingName: '晴海クロノレジデンス',
+      normalizedAddress: '東京都中央区晴海2-3-30',
+      municipalityTownKey: '東京都中央区晴海',
+      addressBlockKey: '東京都中央区晴海2-3-30',
+      areaSqm: 72.91,
+      floor: 48,
+      layout: '3LDK',
+      listingStatus: 'active',
+      firstSeenAt: seenAt,
+      lastSeenAt: seenAt
+    };
+    chrome.storage.local.get({ observedListingsV1: { version: 1, items: [] } }, (result) => {
+      chrome.storage.local.set({
+        observedListingsV1: {
+          ...result.observedListingsV1,
+          items: [
+            ...result.observedListingsV1.items.filter(item => item.listingKey !== counterpart.listingKey),
+            counterpart
+          ]
+        }
+      }, resolve);
+    });
+  }), new Date().toISOString());
+  await context.route(fixtureCase.url, route => route.fulfill({
+    status: 200,
+    contentType: 'text/html; charset=utf-8',
+    body: buildSuumoDetailObservedFixture()
+  }));
+  const page = await context.newPage();
+  await page.goto(fixtureCase.url);
+  await page.waitForSelector('.fudosan-unit-price', { timeout: 10000 });
+  const firstRecord = await assertObservedRecord(storageProbe, fixtureCase);
+  await page.waitForSelector('.fudosan-cross-site-badge', { timeout: 10000 });
+  assert.match(await page.locator('.fudosan-cross-site-badge').innerText(), /横断一致 [2-9]\d*サイト/);
+  assert.match(await page.locator('.fudosan-cross-site-caption').innerText(), /閲覧履歴内/);
+
+  await page.evaluate(() => {
+    window.__detailOriginalAnchor = document.querySelector('.fudosan-unit-price:not(.fudosan-unit-price--compact)');
+    const externalNode = document.createElement('section');
+    externalNode.className = 'external-detail-update';
+    document.body.appendChild(externalNode);
+  });
+  await page.waitForTimeout(650);
+
+  await page.waitForFunction(() => (
+    document.querySelector('.fudosan-unit-price:not(.fudosan-unit-price--compact)') !== window.__detailOriginalAnchor
+  ));
+  assert.equal(
+    await page.locator('.fudosan-unit-price:not(.fudosan-unit-price--compact)').first().getAttribute('data-cross-site-listing-key'),
+    'SUUMO:999999'
+  );
+  await page.waitForSelector('.fudosan-cross-site-badge', { timeout: 10000 });
+  assert.match(await page.locator('.fudosan-cross-site-badge').innerText(), /横断一致 [2-9]\d*サイト/);
+  assert.match(await page.locator('.fudosan-cross-site-caption').innerText(), /閲覧履歴内/);
+  const secondRecord = await readObservedRecord(storageProbe, fixtureCase);
+  assert.equal(secondRecord.lastSeenAt, firstRecord.lastSeenAt);
+
+  await storageProbe.evaluate(() => new Promise(resolve => chrome.storage.local.set({
+    crossSiteMatchingSettingsV1: { enabled: false, retentionDays: 90 }
+  }, resolve)));
+  await page.waitForTimeout(100);
+  await storageProbe.evaluate(() => new Promise(resolve => chrome.storage.local.set({
+    crossSiteMatchingSettingsV1: { enabled: true, retentionDays: 90 }
+  }, resolve)));
+  const reflushDeadline = Date.now() + 10000;
+  let reenabledRecord = secondRecord;
+  while (reenabledRecord.lastSeenAt === firstRecord.lastSeenAt && Date.now() < reflushDeadline) {
+    await storageProbe.waitForTimeout(50);
+    reenabledRecord = await readObservedRecord(storageProbe, fixtureCase);
+  }
+  assert.notEqual(reenabledRecord.lastSeenAt, firstRecord.lastSeenAt);
+
+  await page.close();
+  await storageProbe.close();
+  await context.unroute(fixtureCase.url);
+}
+
+async function testObservedExtractionMatrix(context, extensionId) {
+  const storageProbe = await context.newPage();
+  await storageProbe.goto(`chrome-extension://${extensionId}/popup.html`);
+  const cases = [
+    { site: 'SUUMO', pageType: 'list', sourceListingId: '123456', url: 'https://suumo.jp/ms/chuko/tokyo/sc_chuo/', fixture: buildSuumoFixture, record: { rawName: '晴海クロノレジデンス', rawAddress: '東京都中央区晴海2-3-30', normalizedBuildingName: '晴海クロノレジデンス', addressBlockKey: '東京都中央区晴海2-3-30', areaSqm: 72.91, floor: 48, layout: '3LDK' } },
+    { site: 'SUUMO', pageType: 'detail', sourceListingId: '888888', url: 'https://suumo.jp/ms/chuko/tokyo/sc_chuo/nc_888888/', fixture: buildSuumoDetailObservedFixture, record: { rawName: '晴海クロノレジデンス', rawAddress: '東京都中央区晴海2-3-30', normalizedBuildingName: '晴海クロノレジデンス', addressBlockKey: '東京都中央区晴海2-3-30', areaSqm: 72.91, floor: 48, layout: '3LDK' } },
+    { site: 'REHOUSE', pageType: 'list', sourceListingId: 'RH-LIST-777', url: 'https://www.rehouse.co.jp/buy/mansion/prefecture/13/city/13102/', fixture: buildRehouseListObservedFixture, record: { rawName: '晴海クロノレジデンス', rawAddress: '東京都中央区晴海2-3-30', normalizedBuildingName: '晴海クロノレジデンス', addressBlockKey: '東京都中央区晴海2-3-30', areaSqm: 72.91, floor: 48, layout: '3LDK' } },
+    { site: 'REHOUSE', pageType: 'detail', sourceListingId: 'F1FAGA2C', url: 'https://www.rehouse.co.jp/buy/mansion/bkdetail/F1FAGA2C/', fixture: buildRehouseDetailFixture, record: { rawName: '晴海クロノレジデンス', rawAddress: '東京都中央区晴海2-3-30', normalizedBuildingName: '晴海クロノレジデンス', addressBlockKey: '東京都中央区晴海2-3-30', areaSqm: 72.91, floor: 48, layout: '3LDK' } },
+    { site: 'ATHOME', pageType: 'list', sourceListingId: '7777777777', url: 'https://www.athome.co.jp/mansion/chuko/tokyo/chuo-city/list/', fixture: buildAthomeListObservedFixture, record: { rawName: '晴海クロノレジデンス', rawAddress: '東京都中央区晴海2-3-30', normalizedBuildingName: '晴海クロノレジデンス', addressBlockKey: '東京都中央区晴海2-3-30', areaSqm: 72.91, floor: 48, layout: '3LDK' } },
+    { site: 'ATHOME', pageType: 'detail', sourceListingId: '1234567890', url: 'https://www.athome.co.jp/mansion/1234567890/', fixture: buildAthomeDetailFixture, record: { rawName: '晴海クロノレジデンス', rawAddress: '東京都中央区晴海2-3-30', normalizedBuildingName: '晴海クロノレジデンス', addressBlockKey: '東京都中央区晴海2-3-30', areaSqm: 72.91, floor: 48, layout: '3LDK' } },
+    { site: 'HOMES', pageType: 'list', sourceListingId: '222', url: 'https://www.homes.co.jp/mansion/chuko/list/', fixture: buildHomesListFixture, record: { rawName: '晴海クロノレジデンス', rawAddress: '東京都中央区晴海2-3-30', normalizedBuildingName: '晴海クロノレジデンス', addressBlockKey: '東京都中央区晴海2-3-30', areaSqm: 72.91, floor: 48, layout: '3LDK' } },
+    { site: 'HOMES', pageType: 'detail', sourceListingId: '1193620002052', url: 'https://www.homes.co.jp/mansion/b-1193620002052/', fixture: buildHomesDetailFixture, record: { rawName: '晴海クロノレジデンス', rawAddress: '東京都中央区晴海2-3-30', normalizedBuildingName: '晴海クロノレジデンス', addressBlockKey: '東京都中央区晴海2-3-30', areaSqm: 72.91, floor: 48, layout: '3LDK' } }
+  ];
+
+  for (const fixtureCase of cases) {
+    await removeObservedRecord(storageProbe, fixtureCase);
+    const observedAfter = Date.now();
+    await context.route(fixtureCase.url, route => route.fulfill({
+      status: 200,
+      contentType: 'text/html; charset=utf-8',
+      body: fixtureCase.fixture()
+    }));
+    const page = await context.newPage();
+    await page.goto(fixtureCase.url);
+    await page.waitForSelector('.fudosan-unit-price', { timeout: 10000 });
+    await assertObservedRecord(storageProbe, { ...fixtureCase, observedAfter });
+    await page.close();
+    await context.unroute(fixtureCase.url);
+  }
+  await storageProbe.close();
+}
+
 async function testRehouseDetailPage(context) {
   await context.route('https://www.rehouse.co.jp/**', route => {
     route.fulfill({
@@ -273,12 +782,12 @@ async function testRehouseDetailPage(context) {
 
   const repairText = await page.locator('.fudosan-repair-fund').innerText();
   assert.match(repairText, /修繕積立金単価/);
-  assert.match(repairText, /305円\/㎡\/月/);
+  assert.match(repairText, /206円\/㎡\/月/);
   assert.match(repairText, /338円\/㎡/);
 
   const monthlyText = await page.locator('.fudosan-monthly-cost').innerText();
-  assert.match(monthlyText, /管理費 33,900円/);
-  assert.match(monthlyText, /修繕 30,500円/);
+  assert.match(monthlyText, /管理費 22,000円/);
+  assert.match(monthlyText, /修繕 15,000円/);
 
   await page.close();
 }
@@ -302,11 +811,11 @@ async function testAthomeDetailPage(context) {
 
   const repairText = await page.locator('.fudosan-repair-fund').innerText();
   assert.match(repairText, /修繕積立金単価/);
-  assert.match(repairText, /200円\/㎡\/月/);
+  assert.match(repairText, /206円\/㎡\/月/);
 
   const monthlyText = await page.locator('.fudosan-monthly-cost').innerText();
-  assert.match(monthlyText, /管理費 12,000円/);
-  assert.match(monthlyText, /修繕 9,000円/);
+  assert.match(monthlyText, /管理費 22,000円/);
+  assert.match(monthlyText, /修繕 15,000円/);
 
   await page.close();
 }
@@ -330,11 +839,11 @@ async function testHomesDetailPage(context) {
 
   const repairText = await page.locator('.fudosan-repair-fund').innerText();
   assert.match(repairText, /修繕積立金単価/);
-  assert.match(repairText, /200円\/㎡\/月/);
+  assert.match(repairText, /206円\/㎡\/月/);
 
   const monthlyText = await page.locator('.fudosan-monthly-cost').innerText();
-  assert.match(monthlyText, /管理費 19,800円/);
-  assert.match(monthlyText, /修繕 15,160円/);
+  assert.match(monthlyText, /管理費 22,000円/);
+  assert.match(monthlyText, /修繕 15,000円/);
 
   await page.close();
 }
@@ -387,6 +896,23 @@ async function setPopupStorage(page, extensionVersion) {
         years: 35,
         downPaymentMan: 0
       },
+      observedListingsV1: {
+        version: 1,
+        items: [{ listingKey: 'SUUMO:popup-clear-test' }]
+      },
+      listingMatchOverridesV1: {
+        version: 1,
+        buildingPairs: [{ pairKey: 'building-clear-test' }],
+        unitPairs: [{ pairKey: 'unit-clear-test' }]
+      },
+      buildingAliasesV1: {
+        version: 1,
+        entries: [{ alias: 'clear-test' }]
+      },
+      crossSiteMatchingSettingsV1: {
+        enabled: true,
+        retentionDays: 90
+      },
       lastSeenReleaseNotesVersion: extensionVersion
     }, resolve);
   }), { favorites, extensionVersion });
@@ -419,6 +945,38 @@ async function testPopup(context, extensionId) {
   await setPopupStorage(page, CURRENT_VERSION);
   await page.reload();
   await page.waitForSelector('.favorite-item', { timeout: 10000 });
+
+  const toggle = page.locator('#cross-site-enabled');
+  assert.equal(await toggle.isChecked(), true);
+  await toggle.uncheck();
+  await page.waitForFunction(() => new Promise((resolve) => {
+    chrome.storage.local.get({ crossSiteMatchingSettingsV1: {} }, result => (
+      resolve(
+        result.crossSiteMatchingSettingsV1.enabled === false &&
+        result.crossSiteMatchingSettingsV1.retentionDays === 90
+      )
+    ));
+  }));
+
+  page.once('dialog', dialog => dialog.accept());
+  await page.locator('#clear-cross-site-data').click();
+  await page.waitForFunction(() => new Promise((resolve) => {
+    chrome.storage.local.get({
+      observedListingsV1: { items: [{}] },
+      listingMatchOverridesV1: { buildingPairs: [{}], unitPairs: [{}] },
+      buildingAliasesV1: { entries: [{}] },
+      crossSiteMatchingSettingsV1: { enabled: true },
+      favorites: []
+    }, result => resolve(
+      result.observedListingsV1.items.length === 0 &&
+      result.listingMatchOverridesV1.buildingPairs.length === 0 &&
+      result.listingMatchOverridesV1.unitPairs.length === 0 &&
+      result.buildingAliasesV1.entries.length === 0 &&
+      result.crossSiteMatchingSettingsV1.enabled === false &&
+      result.crossSiteMatchingSettingsV1.retentionDays === 90 &&
+      result.favorites.length === 2
+    ));
+  }));
 
   assert.equal(await page.locator('.favorite-item').count(), 2);
   assert.equal(await page.locator('.favorite-price-history').count(), 1);
@@ -465,6 +1023,10 @@ async function main() {
     await testRehouseDetailPage(context);
     await testAthomeDetailPage(context);
     await testHomesDetailPage(context);
+    await testCrossSiteContentBadge(context, extensionId);
+    await testCrossSiteSidePanel(context, extensionId);
+    await testObservedExtractionMatrix(context, extensionId);
+    await testDetailObservationIsStable(context, extensionId);
     await testPopup(context, extensionId);
 
     console.log('extension E2E tests passed');
